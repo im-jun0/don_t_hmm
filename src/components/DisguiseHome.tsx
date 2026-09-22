@@ -1,58 +1,110 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { DISGUISE_APP_NAMES, DISGUISE_DOCK, POLL_MS, TEXT } from "@/config";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DISGUISE_APP_NAMES, POLL_MS, TEXT } from "@/config";
 import { fetchSnapshot, incrementItem, type Row } from "@/lib/api";
 import { useSelectedUser } from "@/lib/useSelectedUser";
+import { DECOY_APPS, DecoyIcon, type DecoyApp } from "@/components/DisguiseIcons";
 
 /**
  * 위장 테마. 아이폰 홈 화면처럼 보이게 깔아요.
- * 항목은 그대로 앱이 되고, 카운트는 아이콘 위 빨간 뱃지로 나와요.
- * 눌러도 이모지가 안 튀어요 — 그게 목적이니까요. 독 맨 오른쪽 설정으로 돌아와요.
+ *
+ * 진짜 항목만 덜렁 올려두면 화면이 휑해서 티가 나요. 그래서 들러리 앱으로 화면을 채우고
+ * 진짜 항목을 그 사이에 흩어 놓아요. 카운트는 아이콘 위 빨간 뱃지로 나오고,
+ * 눌러도 이모지가 안 튀어요 — 튀면 위장이 그 자리에서 깨지니까요.
+ * 독 맨 오른쪽 설정으로 원래 테마로 돌아와요.
  */
+
+const ICON = 60;
+const COLUMNS = 4;
+/** 최소 이만큼은 깔아요. 진짜 항목이 많으면 그만큼 늘어나요. */
+const MIN_SLOTS = 24;
+const DOCK_KEYS = ["phone", "safari", "messages"];
+
+/**
+ * 그리드에 깔 들러리. 독에 있는 앱과 설정은 빼요 —
+ * 진짜 아이폰은 같은 앱이 독과 홈 화면에 동시에 있을 수 없어서 그대로 두면 티가 나요.
+ */
+const GRID_DECOYS = DECOY_APPS.filter(
+  (a) => !DOCK_KEYS.includes(a.key) && a.key !== "settings"
+);
 
 /** 항목 순서대로 가짜 앱 이름을 붙여요. 모자라면 앞에서부터 다시 써요. */
 function appName(index: number): string {
   return DISGUISE_APP_NAMES[index % DISGUISE_APP_NAMES.length];
 }
 
+/**
+ * 진짜 항목을 놓을 자리를 정해요.
+ * 화면 전체에 고르게 벌린 뒤 i%3 만큼만 어긋나게 밀어요 —
+ * 딱 맞게 줄을 세우면 그것대로 규칙이 보이고, 뭉쳐 있으면 한눈에 티가 나거든요.
+ * 계산이 고정이라 새로고침해도 자리가 안 바뀌어요. 매번 옮겨 다니는 게 제일 수상하니까요.
+ */
+function scatterSlots(count: number, total: number): number[] {
+  if (count === 0) return [];
+  const gap = total / count;
+  const used = new Set<number>();
+  return Array.from({ length: count }, (_, i) => {
+    let slot = Math.round(i * gap + (i % 3)) % total;
+    while (used.has(slot)) slot = (slot + 1) % total;
+    used.add(slot);
+    return slot;
+  });
+}
+
 function Badge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="absolute -right-1.5 -top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-[#ff3b30] px-1.5 text-[12px] font-semibold leading-none text-white shadow-sm">
+    <span className="absolute -right-1.5 -top-1.5 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[#ff3b30] px-1.5 text-[11px] font-semibold leading-none text-white ring-2 ring-black/5">
       {count > 999 ? "999+" : count}
     </span>
   );
 }
 
-/** 앱 아이콘 하나. 이미지가 있으면 그대로 쓰고, 없으면 색 타일로 대신해요. */
-function AppIcon({ row }: { row: Row }) {
+/** 진짜 항목 아이콘. 올려둔 이미지가 있으면 그대로, 없으면 색 타일로 대신해요. */
+function ItemIcon({ row }: { row: Row }) {
   if (row.backgroundImageUrl) {
     return (
       <span
-        className="block h-[60px] w-[60px] rounded-[15px] bg-cover bg-center shadow-sm ring-1 ring-black/10"
-        style={{ backgroundImage: `url(${row.backgroundImageUrl})` }}
+        className="block rounded-[22%] bg-cover bg-center shadow-sm ring-1 ring-black/10"
+        style={{ width: ICON, height: ICON, backgroundImage: `url(${row.backgroundImageUrl})` }}
       />
     );
   }
   return (
     <span
-      className="flex h-[60px] w-[60px] items-center justify-center rounded-[15px] text-xl font-semibold text-black/45 shadow-sm ring-1 ring-black/10"
-      style={{ background: row.backgroundColor ?? "linear-gradient(160deg,#fdfdfd,#dcdce1)" }}
+      className="flex items-center justify-center rounded-[22%] text-xl font-semibold text-black/45 shadow-sm ring-1 ring-black/10"
+      style={{
+        width: ICON,
+        height: ICON,
+        background: row.backgroundColor ?? "linear-gradient(180deg,#fdfdfd,#dcdce1)",
+      }}
     >
       {row.name.trim().slice(0, 1)}
     </span>
   );
 }
 
-/** 독에 놓이는 들러리. 누르면 아무 일도 안 일어나요. */
-function DecoyIcon({ label }: { label: string }) {
+function Tile({
+  label,
+  children,
+  onClick,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onClick?: () => void;
+}) {
   return (
-    <span className="flex flex-col items-center gap-1.5">
-      <span className="flex h-[60px] w-[60px] items-center justify-center rounded-[15px] bg-gradient-to-b from-white to-neutral-300 text-[11px] font-medium text-neutral-500 shadow-sm ring-1 ring-black/10">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center gap-1.5 transition active:scale-95"
+    >
+      <span className="relative">{children}</span>
+      <span className="w-full truncate text-center text-[11px] font-medium text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
         {label}
       </span>
-    </span>
+    </button>
   );
 }
 
@@ -76,19 +128,16 @@ function StatusBar() {
     <div className="flex items-center justify-between px-7 pt-3 text-[15px] font-semibold text-white">
       <span className="tabular-nums">{now}</span>
       <span className="flex items-center gap-1.5">
-        {/* 신호 */}
         <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true">
           <rect x="0" y="7.5" width="3" height="3.5" rx="1" />
           <rect x="4.6" y="5.5" width="3" height="5.5" rx="1" />
           <rect x="9.2" y="3" width="3" height="8" rx="1" />
           <rect x="13.8" y="0" width="3" height="11" rx="1" />
         </svg>
-        {/* 와이파이 */}
         <svg width="16" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
           <path d="M1 4.2a10.5 10.5 0 0 1 14 0M3.7 7a6.6 6.6 0 0 1 8.6 0" />
           <circle cx="8" cy="10" r="1.1" fill="currentColor" stroke="none" />
         </svg>
-        {/* 배터리 */}
         <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
           <rect x="0.6" y="0.6" width="20" height="10.8" rx="3" stroke="currentColor" strokeOpacity="0.45" />
           <rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.8" fill="currentColor" />
@@ -139,61 +188,82 @@ export default function DisguiseHome({ onExit }: { onExit: () => void }) {
     }
   };
 
+  /** 자리마다 진짜 항목이 올지 들러리가 올지 미리 정해둬요. */
+  const slots = useMemo(() => {
+    const wanted = Math.max(MIN_SLOTS, Math.ceil((rows.length + 10) / COLUMNS) * COLUMNS);
+    // 들러리는 한 종류씩만 써요. 모자라면 화면을 덜 채우는 게 나아요 —
+    // 같은 앱이 두 번 보이는 순간 위장이 깨지니까요. (마지막 줄이 덜 차는 건 자연스러워요)
+    const total = Math.min(wanted, rows.length + GRID_DECOYS.length);
+
+    const placed = scatterSlots(rows.length, total);
+    const bySlot = new Map<number, { row: Row; index: number }>();
+    placed.forEach((slot, i) => bySlot.set(slot, { row: rows[i], index: i }));
+
+    let decoyAt = 0;
+    return Array.from({ length: total }, (_, slot) => {
+      const real = bySlot.get(slot);
+      if (real) return { kind: "real" as const, ...real };
+      const decoy: DecoyApp = GRID_DECOYS[decoyAt++];
+      return { kind: "decoy" as const, decoy };
+    });
+  }, [rows]);
+
+  const dock = DOCK_KEYS.map((k) => DECOY_APPS.find((a) => a.key === k)).filter(
+    (a): a is DecoyApp => Boolean(a)
+  );
+
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col overflow-y-auto"
       style={{
-        background:
-          "linear-gradient(165deg,#3f4c6b 0%,#5c6b8a 35%,#8a7f9c 70%,#c2a3a8 100%)",
+        background: "linear-gradient(165deg,#3f4c6b 0%,#5c6b8a 35%,#8a7f9c 70%,#c2a3a8 100%)",
       }}
     >
       <StatusBar />
 
-      <div className="flex-1 px-6 pb-4 pt-8">
+      <div className="flex-1 px-6 pb-3 pt-7">
         {loaded && rows.length === 0 && (
-          <p className="mt-10 text-center text-sm text-white/70">{TEXT.disguise.empty}</p>
+          <p className="mb-5 text-center text-[11px] text-white/45">{TEXT.disguise.empty}</p>
         )}
 
-        <div className="grid grid-cols-4 gap-x-4 gap-y-6">
-          {rows.map((row, i) => (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => tap(row)}
-              className="flex flex-col items-center gap-1.5 transition active:scale-95"
-            >
-              <span className="relative">
-                <AppIcon row={row} />
-                <Badge count={row.count} />
-              </span>
-              <span className="w-full truncate text-center text-[11px] font-medium text-white drop-shadow">
-                {appName(i)}
-              </span>
-            </button>
-          ))}
+        <div className="grid grid-cols-4 gap-x-4 gap-y-[22px]">
+          {slots.map((slot, i) =>
+            slot.kind === "real" ? (
+              <Tile key={slot.row.id} label={appName(slot.index)} onClick={() => tap(slot.row)}>
+                <ItemIcon row={slot.row} />
+                <Badge count={slot.row.count} />
+              </Tile>
+            ) : (
+              <Tile key={`decoy-${i}`} label={slot.decoy.label}>
+                <DecoyIcon app={slot.decoy} size={ICON} />
+                {slot.decoy.badge ? <Badge count={slot.decoy.badge} /> : null}
+              </Tile>
+            )
+          )}
         </div>
+      </div>
+
+      {/* 페이지 점 */}
+      <div className="flex justify-center gap-1.5 pb-3">
+        <span className="h-1.5 w-1.5 rounded-full bg-white" />
+        <span className="h-1.5 w-1.5 rounded-full bg-white/40" />
       </div>
 
       {/* 독 — 맨 오른쪽 설정을 누르면 원래 테마로 돌아와요 */}
       <div
-        className="mx-4 mb-2 flex items-center justify-around rounded-[28px] bg-white/20 px-3 py-3 backdrop-blur"
+        className="mx-4 flex items-center justify-around rounded-[30px] bg-white/20 px-3 py-3 backdrop-blur"
         style={{ marginBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
       >
-        {DISGUISE_DOCK.map((label) => (
-          <DecoyIcon key={label} label={label} />
+        {dock.map((app) => (
+          <DecoyIcon key={app.key} app={app} size={ICON} />
         ))}
         <button
           type="button"
           onClick={onExit}
           aria-label={TEXT.disguise.exitLabel}
-          className="flex flex-col items-center transition active:scale-95"
+          className="transition active:scale-95"
         >
-          <span className="flex h-[60px] w-[60px] items-center justify-center rounded-[15px] bg-gradient-to-b from-neutral-300 to-neutral-500 shadow-sm ring-1 ring-black/10">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.6} aria-hidden="true">
-              <circle cx="12" cy="12" r="3.2" />
-              <path d="M19.4 14.2a1.6 1.6 0 0 0 .32 1.77l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.78-.32 1.6 1.6 0 0 0-.97 1.47v.17a1.9 1.9 0 0 1-3.81 0v-.09a1.6 1.6 0 0 0-1.05-1.47 1.6 1.6 0 0 0-1.77.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.78 1.6 1.6 0 0 0-1.47-.97h-.17a1.9 1.9 0 0 1 0-3.81h.09a1.6 1.6 0 0 0 1.47-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.77.32h.08a1.6 1.6 0 0 0 .97-1.47v-.17a1.9 1.9 0 1 1 3.81 0v.09a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.78-.32l.05-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.77v.08a1.6 1.6 0 0 0 1.47.97h.17a1.9 1.9 0 0 1 0 3.81h-.09a1.6 1.6 0 0 0-1.47.97z" />
-            </svg>
-          </span>
+          <DecoyIcon app={DECOY_APPS.find((a) => a.key === "settings")!} size={ICON} />
         </button>
       </div>
     </div>
