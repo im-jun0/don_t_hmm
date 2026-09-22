@@ -64,7 +64,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const navHash = user ? `#/${encodeURIComponent(user)}` : "";
 
   // 로그인 콜백은 세션을 만드는 중이라 로그인 화면으로 되돌리면 안 돼요.
-  if (pathname === "/auth/callback" || pathname === "/disguise-preview") return <>{children}</>; // TEMPPREVIEW
+  if (pathname === "/auth/callback") return <>{children}</>;
 
   // 로그인 전에는 헤더도 탭바도 없이 로그인 화면만 보여요.
   if (authStatus === "loading") return <div className="min-h-screen bg-white" />;
