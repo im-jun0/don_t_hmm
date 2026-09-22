@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { POLL_MS, TEXT } from "@/config";
-import { fetchDailyCounts, fetchSnapshot, type Row } from "@/lib/api";
+import { fetchDailyCounts, fetchSnapshot, fetchTodayByUser, type Row } from "@/lib/api";
 import { useSelectedUser } from "@/lib/useSelectedUser";
 
 // dataviz 스킬 참고 팔레트 (이 앱은 라이트 모드 전용이라 hex 로 고정)
@@ -68,11 +68,14 @@ export default function StatsView() {
   const [rows, setRows] = useState<Row[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [daily, setDaily] = useState<{ day: string; count: number }[]>([]);
+  const [today, setToday] = useState<{ name: string; count: number; isMe: boolean }[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
 
   const load = useCallback(async (target: string | null) => {
     try {
+      // 친구들 오늘치는 누가 선택돼 있든 똑같아서 따로 가져와요.
+      fetchTodayByUser().then(setToday).catch(() => {});
       const snap = await fetchSnapshot(target);
       if (!target) {
         setRows([]);
@@ -160,6 +163,33 @@ export default function StatsView() {
               </div>
             ))}
           </div>
+
+          {/* 오늘 친구들 — 카드 말고 한 줄씩 */}
+          <section className="mt-10">
+            <h2 className="text-lg font-semibold tracking-tight">{TEXT.stats.todayTitle}</h2>
+            <p className="mt-1 text-xs text-neutral-400">{TEXT.stats.todayHint}</p>
+            {/* 0 이어도 이름은 보여줘요. 누가 조용한지도 정보니까요. */}
+            <ul className="mt-4 divide-y divide-neutral-100 border-y border-neutral-100">
+              {today.map((t) => (
+                <li
+                  key={t.name}
+                  className={
+                    "flex items-baseline gap-3 py-2.5 text-sm " +
+                    (t.isMe ? "font-semibold text-neutral-900" : "text-neutral-600")
+                  }
+                >
+                  <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                  <span
+                    className={
+                      "shrink-0 tabular-nums " + (t.count === 0 ? "text-neutral-300" : "")
+                    }
+                  >
+                    {t.count.toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
 
           {rows.length === 0 ? (
             <p className="mt-10 rounded-2xl bg-neutral-50 px-5 py-4 text-sm text-neutral-600">
