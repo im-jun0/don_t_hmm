@@ -7,17 +7,40 @@ import { NAV, TEXT } from "@/config";
 import { useAuth } from "@/lib/useAuth";
 import { useSelectedUser } from "@/lib/useSelectedUser";
 import AuthMenu from "@/components/AuthMenu";
+import DisguiseHome from "@/components/DisguiseHome";
 import HmmFace from "@/components/HmmFace";
 import NavIcon from "@/components/NavIcon";
 import LoginScreen from "@/components/LoginScreen";
 import PatchNotes from "@/components/PatchNotes";
+
+const DISGUISE_KEY = "donthmm:disguise";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, selectUser } = useSelectedUser();
   const { status: authStatus, me, displayName } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [disguised, setDisguised] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 위장 테마는 새로고침해도 유지돼요. 서버 렌더와 어긋나면 안 되니 마운트 후에 읽어요.
+  // (로그인 확인 중 빈 화면이 먼저 떠 있어서 깜빡임은 안 보여요.)
+  useEffect(() => {
+    try {
+      setDisguised(localStorage.getItem(DISGUISE_KEY) === "1");
+    } catch {
+      /* 시크릿 모드처럼 막히는 곳에서는 그냥 꺼진 채로 둬요 */
+    }
+  }, []);
+
+  const changeDisguise = (on: boolean) => {
+    setDisguised(on);
+    try {
+      localStorage.setItem(DISGUISE_KEY, on ? "1" : "0");
+    } catch {
+      /* 저장은 못 해도 이번 세션에는 적용돼요 */
+    }
+  };
 
   // 헤더에 backdrop-blur 가 있어서 fixed 오버레이로 바깥 클릭을 감지하면
   // 뷰포트가 아니라 헤더 박스 기준으로 좁게 걸려요. 문서 클릭 리스너로 대신해요.
@@ -49,6 +72,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-white text-neutral-900">
+      {/* 위장 테마. fixed inset-0 z-50 이라 헤더도 탭바도 그대로 덮어요. 폰에서만 보여요. */}
+      {disguised && (
+        <div className="sm:hidden">
+          <DisguiseHome onExit={() => changeDisguise(false)} />
+        </div>
+      )}
+
       <header className="sticky top-0 z-40 border-b border-neutral-100 bg-white/85 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-3">
           <Link
@@ -63,6 +93,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-1">
             <AuthMenu displayName={displayName} />
             <PatchNotes />
+
+            {/* 위장 테마로 전환 — 폰에서만 */}
+            <button
+              type="button"
+              aria-label={TEXT.disguise.toggleLabel}
+              onClick={() => changeDisguise(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900 sm:hidden"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5" />
+                <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
 
             {/* 데스크톱: 햄버거 메뉴 */}
             <div ref={menuRef} className="relative hidden sm:block">
