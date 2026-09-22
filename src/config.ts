@@ -67,7 +67,7 @@ export const TEXT = {
   appTitle: "don't hmm",
   pickTitle: "누구세요?",
   pickHint: "카카오로 로그인하면 내 화면이 바로 열려요.",
-  totalSuffix: (n: number) => `지금까지 총 ${n.toLocaleString()}번 참았습니다.`,
+  totalSuffix: (n: number) => `오늘 ${n.toLocaleString()}번 참았습니다.`,
   loading: "불러오는 중이에요.",
   emptyUser: "등록된 행동이 아직 없어요. 항목관리에서 추가해보세요.",
   emptyAll: "사용자가 아직 없어요. 항목관리에서 추가해보세요.",
@@ -183,6 +183,16 @@ export const TEXT = {
 
 /** 새 버전이 나오면 배열 맨 앞에 추가하세요. 헤더 벨 뱃지 + 모달에 자동 반영돼요. */
 export const PATCH_NOTES = [
+  {
+    version: "2.6.0",
+    date: "2026-09-23",
+    items: [
+      "카드 숫자는 이제 오늘치예요. 날짜가 바뀌면 0 부터 다시 시작해요.",
+      "누적은 그대로 쌓여요 — 현황과 랭킹에서는 지금까지 모은 총합이 보여요.",
+      "날짜별 기록이 남아서 나중에 \"어제는 몇 번\" 같은 것도 볼 수 있어요.",
+      "위장 테마에서 가짜 상태바(시각·배터리)를 뺐어요. 진짜 상태바가 이미 위에 있으니까요.",
+    ],
+  },
   {
     version: "2.5.0",
     date: "2026-09-23",

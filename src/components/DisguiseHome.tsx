@@ -108,46 +108,6 @@ function Tile({
   );
 }
 
-function StatusBar() {
-  const [now, setNow] = useState("");
-  useEffect(() => {
-    const tick = () =>
-      setNow(
-        new Date().toLocaleTimeString("ko-KR", {
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: false,
-        })
-      );
-    tick();
-    const t = setInterval(tick, 10000);
-    return () => clearInterval(t);
-  }, []);
-
-  return (
-    <div className="flex items-center justify-between px-7 pt-3 text-[15px] font-semibold text-white">
-      <span className="tabular-nums">{now}</span>
-      <span className="flex items-center gap-1.5">
-        <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true">
-          <rect x="0" y="7.5" width="3" height="3.5" rx="1" />
-          <rect x="4.6" y="5.5" width="3" height="5.5" rx="1" />
-          <rect x="9.2" y="3" width="3" height="8" rx="1" />
-          <rect x="13.8" y="0" width="3" height="11" rx="1" />
-        </svg>
-        <svg width="16" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
-          <path d="M1 4.2a10.5 10.5 0 0 1 14 0M3.7 7a6.6 6.6 0 0 1 8.6 0" />
-          <circle cx="8" cy="10" r="1.1" fill="currentColor" stroke="none" />
-        </svg>
-        <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
-          <rect x="0.6" y="0.6" width="20" height="10.8" rx="3" stroke="currentColor" strokeOpacity="0.45" />
-          <rect x="2.2" y="2.2" width="15.5" height="7.6" rx="1.8" fill="currentColor" />
-          <path d="M22.4 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" fillOpacity="0.45" />
-        </svg>
-      </span>
-    </div>
-  );
-}
-
 export default function DisguiseHome({ onExit }: { onExit: () => void }) {
   const { user } = useSelectedUser();
   const [rows, setRows] = useState<Row[]>([]);
@@ -219,9 +179,7 @@ export default function DisguiseHome({ onExit }: { onExit: () => void }) {
         background: "linear-gradient(165deg,#3f4c6b 0%,#5c6b8a 35%,#8a7f9c 70%,#c2a3a8 100%)",
       }}
     >
-      <StatusBar />
-
-      <div className="flex-1 px-6 pb-3 pt-7">
+      <div className="flex-1 px-6 pb-3 pt-10">
         {loaded && rows.length === 0 && (
           <p className="mb-5 text-center text-[11px] text-white/45">{TEXT.disguise.empty}</p>
         )}

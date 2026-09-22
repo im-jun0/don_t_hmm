@@ -9,6 +9,7 @@
 --   users  : 사이트를 쓰는 사람 (기존 구글시트의 탭 1개)
 --   items  : 사용자별 행위자/행위명/카운트 + background_color/background_image_url (카드 꾸미기, PIN 없음)
 --   events : 클릭 1번 = 1행. 현황 페이지의 일자별 추이 계산용
+--   item_daily_counts : 항목별 x 날짜별 카운트. 카드에 보이는 "오늘" 숫자를 여기서 읽어요
 --   app_config : 항목관리 PIN 저장
 --   users.auth_user_id : 카카오(Supabase Auth) 계정 1개 = 사용자 1명 연결
 --   storage.item-backgrounds : 카드 배경 이미지 업로드 버킷 (공개 읽기, 누구나 업로드)
@@ -86,7 +87,33 @@ begin
 end;
 $$;
 
--- ── 카운트 증가 (메인 화면 클릭) ──
+-- ── 날짜별 카운트 이력 ──
+-- 카드에 보이는 숫자는 "오늘" 눌린 횟수예요. 자정이 지나면 그날 행이 없으니 저절로 0 이 돼요.
+-- 그래서 자정에 뭔가를 지우는 스케줄러가 필요 없어요. 안 도는 크론이 제일 무서우니까요.
+--
+-- 누적은 예전 그대로 items.count 에 남아요. 현황과 랭킹은 계속 그걸 봐요.
+-- (시트에서 넘어오기 전 기록이 items.count 에만 있어서, 이력에서 다시 더하면 그만큼이 날아가요)
+create table if not exists item_daily_counts (
+  item_id uuid not null references items(id) on delete cascade,
+  day date not null,                    -- KST 기준 날짜
+  count int not null default 0,
+  primary key (item_id, day)
+);
+create index if not exists item_daily_counts_day_idx on item_daily_counts(day);
+
+alter table item_daily_counts enable row level security;
+-- 정책 없음 = 직접 접근 차단. 아래 RPC 로만 읽고 써요.
+
+-- 이미 쌓여 있는 events 를 날짜별로 옮겨 담아요.
+-- 오늘 눌린 것까지 그대로 살아나요. 여러 번 실행해도 안전해요.
+insert into item_daily_counts (item_id, day, count)
+select e.item_id, (e.created_at at time zone 'Asia/Seoul')::date, count(*)::int
+  from events e
+ group by 1, 2
+on conflict (item_id, day) do nothing;
+
+-- ── 카운트 증가 ──
+-- 누적(items.count)과 오늘치(item_daily_counts)를 같이 올리고, 카드에 보여줄 오늘치를 돌려줘요.
 create or replace function increment_item(p_item_id uuid)
 returns int
 language plpgsql
@@ -94,15 +121,21 @@ security definer
 set search_path = public
 as $$
 declare
-  next_count int;
+  today date := (now() at time zone 'Asia/Seoul')::date;
+  today_count int;
 begin
-  update items set count = count + 1 where id = p_item_id
-    returning count into next_count;
-  if next_count is null then
+  update items set count = count + 1 where id = p_item_id;
+  if not found then
     raise exception 'item not found';
   end if;
+
+  insert into item_daily_counts (item_id, day, count)
+    values (p_item_id, today, 1)
+    on conflict (item_id, day) do update set count = item_daily_counts.count + 1
+    returning count into today_count;
+
   insert into events (item_id) values (p_item_id);
-  return next_count;
+  return today_count;
 end;
 $$;
 
@@ -540,3 +573,37 @@ as $$
 $$;
 
 grant execute on function total_leaderboard() to authenticated;
+
+-- ── 카드용 조회 ──
+-- 오늘치와 누적을 한 번에 가져와요. 메인 카드는 today_count, 현황은 total_count 를 써요.
+create or replace function items_with_counts(p_user_id uuid)
+returns table (
+  id uuid,
+  actor text,
+  name text,
+  today_count int,
+  total_count int,
+  background_color text,
+  background_image_url text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select i.id,
+         i.actor,
+         i.name,
+         coalesce(d.count, 0)::int,
+         i.count,
+         i.background_color,
+         i.background_image_url
+    from items i
+    left join item_daily_counts d
+      on d.item_id = i.id
+     and d.day = (now() at time zone 'Asia/Seoul')::date
+   where i.user_id = p_user_id
+   order by i.sort_order;
+$$;
+
+grant execute on function items_with_counts(uuid) to anon, authenticated;

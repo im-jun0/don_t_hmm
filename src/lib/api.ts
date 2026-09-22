@@ -5,7 +5,10 @@ export type Row = {
   id: string;
   actor: string;
   name: string;
+  /** 오늘 눌린 횟수. 날짜가 바뀌면 저절로 0 이에요. 카드와 위장 테마 뱃지가 써요. */
   count: number;
+  /** 누적. 현황과 랭킹이 써요. */
+  totalCount: number;
   backgroundColor: string | null;
   backgroundImageUrl: string | null;
 };
@@ -37,24 +40,32 @@ export async function fetchSnapshot(userName: string | null): Promise<Snapshot> 
   const target = users.find((u) => u.name === userName);
   if (!target) return { users: names, userId: null, rows: [] };
 
-  const { data, error } = await supabase
-    .from("items")
-    .select("id, actor, name, count, background_color, background_image_url")
-    .eq("user_id", target.id)
-    .order("sort_order", { ascending: true });
+  // 오늘치는 item_daily_counts 에, 누적은 items.count 에 있어서 RPC 로 한 번에 가져와요.
+  const { data, error } = await supabase.rpc("items_with_counts", { p_user_id: target.id });
   if (error) throw error;
-  const rows: Row[] = (data ?? []).map((r) => ({
-    id: r.id,
-    actor: r.actor,
-    name: r.name,
-    count: r.count,
-    backgroundColor: r.background_color,
-    backgroundImageUrl: r.background_image_url,
-  }));
+  const rows: Row[] = (data ?? []).map(
+    (r: {
+      id: string;
+      actor: string;
+      name: string;
+      today_count: number;
+      total_count: number;
+      background_color: string | null;
+      background_image_url: string | null;
+    }) => ({
+      id: r.id,
+      actor: r.actor,
+      name: r.name,
+      count: r.today_count,
+      totalCount: r.total_count,
+      backgroundColor: r.background_color,
+      backgroundImageUrl: r.background_image_url,
+    })
+  );
   return { users: names, userId: target.id, rows };
 }
 
-/** 카운트를 1 올리고 서버가 알려주는 최종 숫자를 돌려줘요. */
+/** 카운트를 1 올리고 서버가 알려주는 오늘치 최종 숫자를 돌려줘요. */
 export async function incrementItem(itemId: string): Promise<number> {
   assertReady();
   const { data, error } = await supabase.rpc("increment_item", { p_item_id: itemId });
