@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/useAuth";
 import { useSelectedUser } from "@/lib/useSelectedUser";
 import AuthMenu from "@/components/AuthMenu";
 import HmmFace from "@/components/HmmFace";
+import NavIcon from "@/components/NavIcon";
 import LoginScreen from "@/components/LoginScreen";
 import PatchNotes from "@/components/PatchNotes";
 
@@ -84,12 +85,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       href={item.href + navHash}
                       onClick={() => setMenuOpen(false)}
                       className={
-                        "block px-4 py-2 text-sm font-medium transition " +
+                        "flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition " +
                         (pathname === item.href
                           ? "bg-neutral-100 text-neutral-900"
                           : "text-neutral-600 hover:bg-neutral-50")
                       }
                     >
+                      <NavIcon name={item.key} size={17} />
                       {item.label}
                     </Link>
                   ))}
@@ -100,7 +102,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="pb-28 sm:pb-0">{children}</div>
+      {/* 탭바(60px)에 가리지 않게 띄워요. 홈 인디케이터 영역만큼 더 내려줘요. */}
+      <div className="pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:pb-0">{children}</div>
 
       {/* 모바일: 하단 탭바 */}
       <nav
@@ -114,11 +117,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               key={item.key}
               href={item.href + navHash}
+              aria-current={on ? "page" : undefined}
+              // 손가락으로 눌러야 해서 한 칸을 60px 이상으로 잡아요. (iOS 권장 최소는 44px)
               className={
-                "flex flex-1 flex-col items-center justify-center gap-1 py-4 text-sm font-medium active:bg-neutral-50 " +
+                "flex min-h-[60px] flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium active:bg-neutral-100 " +
                 (on ? "text-neutral-900" : "text-neutral-400")
               }
             >
+              <NavIcon name={item.key} size={23} />
               {item.label}
             </Link>
           );
