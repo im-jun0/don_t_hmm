@@ -10,6 +10,7 @@
 --   items  : 사용자별 행위자/행위명/카운트 + background_color/background_image_url (카드 꾸미기, PIN 없음)
 --   events : 클릭 1번 = 1행. 현황 페이지의 일자별 추이 계산용
 --   app_config : 항목관리 PIN 저장
+--   users.auth_user_id : 카카오(Supabase Auth) 계정 1개 = 사용자 1명 연결
 --   storage.item-backgrounds : 카드 배경 이미지 업로드 버킷 (공개 읽기, 누구나 업로드)
 
 create extension if not exists "pgcrypto";
@@ -224,9 +225,10 @@ begin
 end;
 $$;
 
--- ── anon 권한 ──
-grant usage on schema public to anon;
-grant select on users, items to anon;
+-- ── anon / authenticated 권한 ──
+-- 로그인하면 역할이 anon -> authenticated 로 바뀌어요. 둘 다 줘야 로그인 후에도 화면이 돌아가요.
+grant usage on schema public to anon, authenticated;
+grant select on users, items to anon, authenticated;
 grant execute on function
   increment_item(uuid),
   daily_counts(uuid, int),
@@ -236,7 +238,7 @@ grant execute on function
   admin_delete_user(text, uuid),
   admin_upsert_item(text, uuid, uuid, text, text, int, int),
   admin_delete_item(text, uuid)
-to anon;
+to anon, authenticated;
 
 -- ── 이미지 업로드용 Storage 버킷 (배경 이미지) ──
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -250,3 +252,291 @@ create policy "item-backgrounds public read" on storage.objects
 drop policy if exists "item-backgrounds public upload" on storage.objects;
 create policy "item-backgrounds public upload" on storage.objects
   for insert with check (bucket_id = 'item-backgrounds');
+
+-- ── 카카오 로그인 (Supabase Auth) ──
+-- Supabase 대시보드 > Authentication > Providers > Kakao 를 켠 뒤에 이 부분을 실행하세요.
+-- 카카오 계정 1개 = users 행 1개. 최초 로그인 때 본인 이름을 한 번 연결하면 그 뒤로는 바로 열려요.
+
+alter table users add column if not exists auth_user_id uuid unique references auth.users(id) on delete set null;
+
+-- 로그인한 사람에게 연결된 사용자 (없으면 0행 = 아직 이름 연결 전)
+create or replace function my_user()
+returns table (id uuid, name text, sort_order int)
+language sql
+security definer
+set search_path = public
+as $$
+  select u.id, u.name, u.sort_order from users u where u.auth_user_id = auth.uid();
+$$;
+
+-- 아직 아무 카카오 계정과도 연결되지 않은 사용자 목록 (최초 1회 이름 연결 화면용)
+create or replace function unlinked_users()
+returns table (id uuid, name text, sort_order int)
+language sql
+security definer
+set search_path = public
+as $$
+  select u.id, u.name, u.sort_order from users u
+   where u.auth_user_id is null and auth.uid() is not null
+   order by u.sort_order;
+$$;
+
+-- 기존 사용자 행을 내 카카오 계정에 연결
+create or replace function claim_user(p_user_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  linked_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'not signed in';
+  end if;
+  if exists (select 1 from users where auth_user_id = auth.uid()) then
+    raise exception 'already linked';
+  end if;
+  update users set auth_user_id = auth.uid()
+    where id = p_user_id and auth_user_id is null
+    returning id into linked_id;
+  if linked_id is null then
+    raise exception 'user not available';
+  end if;
+  return linked_id;
+end;
+$$;
+
+-- 새 이름으로 시작 (연결할 기존 이름이 없을 때)
+create or replace function create_my_user(p_name text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'not signed in';
+  end if;
+  if exists (select 1 from users where auth_user_id = auth.uid()) then
+    raise exception 'already linked';
+  end if;
+  insert into users (name, sort_order, auth_user_id)
+    values (p_name, coalesce((select max(sort_order) from users), -1) + 1, auth.uid())
+    returning id into new_id;
+  return new_id;
+end;
+$$;
+
+grant execute on function
+  my_user(),
+  unlinked_users(),
+  claim_user(uuid),
+  create_my_user(text)
+to authenticated;
+
+-- ── 미니게임: Don't Hmm 30초 ──
+-- 하루 1판, 업무시간 중 예고 없는 랜덤 시각에 시작돼요.
+-- 라운드 생성과 푸시 발송은 /api/cron/tick 이 secret key 로 해요 (아래 RPC 는 전부 읽기/참여용).
+
+create table if not exists game_rounds (
+  id uuid primary key default gen_random_uuid(),
+  round_date date not null unique,        -- KST 기준 하루 1판
+  start_at timestamptz not null,
+  duration_sec int not null default 30,
+  notified_at timestamptz,                -- 푸시를 쏜 시각 (null 이면 아직)
+  created_at timestamptz not null default now()
+);
+
+create table if not exists game_scores (
+  round_id uuid not null references game_rounds(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  count int not null default 0,
+  primary key (round_id, user_id)
+);
+
+create table if not exists push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table game_rounds enable row level security;
+alter table game_scores enable row level security;
+alter table push_subscriptions enable row level security;
+-- 세 테이블 모두 정책 없음 = anon/authenticated 직접 접근 차단. RPC 와 secret key 로만 써요.
+
+-- ── 지금 상태 (waiting: 오늘 판 대기 / live: 진행 중 / done: 끝) ──
+-- 시작 시각은 대기 중엔 알려주지 않아요. 언제 올지 모르는 게 이 게임의 재미라서요.
+create or replace function game_state()
+returns table (
+  round_id uuid,
+  status text,
+  ends_at timestamptz,
+  server_now timestamptz,
+  my_count int
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select r.id,
+         case when now() < r.start_at then 'waiting'
+              when now() < r.start_at + make_interval(secs => r.duration_sec) then 'live'
+              else 'done' end,
+         case when now() < r.start_at then null
+              else r.start_at + make_interval(secs => r.duration_sec) end,
+         now(),
+         coalesce(s.count, 0)::int
+    from game_rounds r
+    left join users u on u.auth_user_id = auth.uid()
+    left join game_scores s on s.round_id = r.id and s.user_id = u.id
+   order by r.start_at desc
+   limit 1;
+$$;
+
+-- ── 30초 동안 누르기 ──
+create or replace function game_tap(p_round_id uuid)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid;
+  next_count int;
+begin
+  select id into me from users where auth_user_id = auth.uid();
+  if me is null then
+    raise exception 'not linked';
+  end if;
+
+  -- 진행 중인 판에만 넣어요. (타이머가 끝난 뒤 늦게 도착한 탭은 버려요)
+  if not exists (
+    select 1 from game_rounds r
+     where r.id = p_round_id
+       and now() >= r.start_at
+       and now() < r.start_at + make_interval(secs => r.duration_sec)
+  ) then
+    raise exception 'round not live';
+  end if;
+
+  insert into game_scores (round_id, user_id, count) values (p_round_id, me, 1)
+    on conflict (round_id, user_id) do update set count = game_scores.count + 1
+    returning count into next_count;
+  return next_count;
+end;
+$$;
+
+-- ── 이번 판 순위 (많이 누른 사람이 1등) ──
+create or replace function game_ranking(p_round_id uuid)
+returns table (rank int, name text, count int, is_me boolean)
+language sql
+security definer
+set search_path = public
+as $$
+  select (rank() over (order by s.count desc))::int,
+         u.name,
+         s.count,
+         u.auth_user_id = auth.uid()
+    from game_scores s
+    join users u on u.id = s.user_id
+   where s.round_id = p_round_id
+   order by s.count desc, u.name;
+$$;
+
+-- ── 누적 순위 ──
+create or replace function game_leaderboard(p_days int default 30)
+returns table (rank int, name text, count int, rounds int, is_me boolean)
+language sql
+security definer
+set search_path = public
+as $$
+  with totals as (
+    select u.name as name,
+           u.auth_user_id as auth_user_id,
+           sum(s.count)::int as total,
+           count(*)::int as rounds
+      from game_scores s
+      join users u on u.id = s.user_id
+      join game_rounds r on r.id = s.round_id
+     where r.start_at >= now() - make_interval(days => p_days)
+     group by u.id, u.name, u.auth_user_id
+  )
+  select (rank() over (order by t.total desc))::int, t.name, t.total, t.rounds, t.auth_user_id = auth.uid()
+    from totals t
+   order by t.total desc, t.name;
+$$;
+
+-- ── 푸시 알림 구독 ──
+create or replace function save_push_subscription(p_endpoint text, p_p256dh text, p_auth text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid;
+begin
+  select id into me from users where auth_user_id = auth.uid();
+  if me is null then
+    raise exception 'not linked';
+  end if;
+  insert into push_subscriptions (user_id, endpoint, p256dh, auth)
+    values (me, p_endpoint, p_p256dh, p_auth)
+    on conflict (endpoint) do update
+      set user_id = me, p256dh = excluded.p256dh, auth = excluded.auth;
+end;
+$$;
+
+create or replace function delete_push_subscription(p_endpoint text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid;
+begin
+  select id into me from users where auth_user_id = auth.uid();
+  delete from push_subscriptions where endpoint = p_endpoint and user_id = me;
+end;
+$$;
+
+grant execute on function
+  game_state(),
+  game_tap(uuid),
+  game_ranking(uuid),
+  game_leaderboard(int),
+  save_push_subscription(text, text, text),
+  delete_push_subscription(text)
+to authenticated;
+
+-- ── 랭킹: 누적 카운트 ──
+-- 사용자별로 items.count 를 전부 더해요. 많을수록 1등 (= 내 동료가 그만큼 부지런했다는 뜻)
+create or replace function total_leaderboard()
+returns table (rank int, name text, count int, is_me boolean)
+language sql
+security definer
+set search_path = public
+as $$
+  with totals as (
+    select u.id as id,
+           u.name as name,
+           u.auth_user_id as auth_user_id,
+           coalesce(sum(i.count), 0)::int as total
+      from users u
+      left join items i on i.user_id = u.id
+     group by u.id, u.name, u.auth_user_id
+  )
+  select (rank() over (order by t.total desc))::int, t.name, t.total, t.auth_user_id = auth.uid()
+    from totals t
+   order by t.total desc, t.name;
+$$;
+
+grant execute on function total_leaderboard() to authenticated;

@@ -18,14 +18,41 @@ export const CARD_BACKGROUND_COLORS = [
 
 export const NAV = [
   { key: "stats", href: "/stats", label: "현황" },
+  { key: "ranking", href: "/ranking", label: "랭킹" },
   { key: "main", href: "/", label: "메인" },
-  { key: "manage", href: "/manage", label: "항목관리" },
+  { key: "game", href: "/game", label: "게임" },
+  { key: "manage", href: "/manage", label: "관리" },
 ] as const;
+
+/** 랭킹 탑 몇 등까지 빵빠레를 울릴지 */
+export const FANFARE_RANK = 3;
+
+/** 미니게임 설정. 시작 시각은 매일 windowStartHour~windowEndHour(KST) 사이에서 랜덤으로 뽑혀요. */
+export const GAME = {
+  durationSec: 30,
+  windowStartHour: 10,
+  windowEndHour: 18,
+  pollMs: 10000, // 게임 화면에서 "지금 시작됐나?" 확인하는 주기
+  leaderboardDays: 30,
+};
+
+/**
+ * 많이 누른 사람이 1등이에요 — 내 동료가 그만큼 시끄러웠다는 뜻이죠.
+ * 그래서 타이틀은 전부 비꼬는 톤이에요. 1등한테 "조용한 동료를 두셨네요" 하고 놀리는 거예요.
+ */
+export const RANK_TITLES = [
+  "가장 성실한 동료를 둔 친구",
+  "평온한 사무실의 주인공",
+  "적막 속에서 일하는 사람",
+] as const;
+
+/** 꼴등 = 진짜로 아무 일도 없었던 사람 */
+export const LAST_RANK_TITLE = "혼자 일하시나요?";
 
 export const TEXT = {
   appTitle: "don't hmm",
   pickTitle: "누구세요?",
-  pickHint: "위에서 이름을 선택하면 시작돼요.",
+  pickHint: "카카오로 로그인하면 내 화면이 바로 열려요.",
   totalSuffix: (n: number) => `지금까지 총 ${n.toLocaleString()}번 참았습니다.`,
   loading: "불러오는 중이에요.",
   emptyUser: "등록된 행동이 아직 없어요. 항목관리에서 추가해보세요.",
@@ -35,7 +62,7 @@ export const TEXT = {
   errorFetch: "데이터를 불러오지 못했어요. 잠시 후 다시 시도해주세요.",
 
   stats: {
-    noUser: "위에서 이름을 선택하면 현황이 보여요.",
+    noUser: "카카오로 로그인하면 현황이 보여요.",
     totalLabel: "총 참은 횟수",
     itemLabel: "등록된 항목",
     actorLabel: "행위자 수",
@@ -43,6 +70,63 @@ export const TEXT = {
     lineTitle: "최근 14일 추이",
     lineNote: "추이는 전환 시점(오늘)부터 쌓여요. 이전 누적 총계는 막대그래프에 포함돼 있어요.",
     empty: "아직 데이터가 없어요.",
+  },
+
+  login: {
+    title: "Don't Hmm",
+    subtitle: ["당신의 동료는 지금 몇 번이나", "아무 의미 없이 소리를 냈을까요?"],
+  },
+
+  ranking: {
+    title: "랭킹",
+    subtitle: "많이 쌓였다는 건, 내 동료가 그만큼 열심이었다는 뜻이에요.",
+    totalAward: "가장 부지런한 동료를 둔 친구",
+    totalHint: "지금까지 쌓인 카운트를 전부 더했어요.",
+    gameAward: "목표 지향적인 동료를 둔 친구",
+    gameHint: (days: number) => `최근 ${days}일 미니게임 누적이에요.`,
+    empty: "아직 순위를 매길 기록이 없어요.",
+    congrats: (rank: number, award: string) => `${award} ${rank}등!`,
+    congratsSub: "축하드립니다. 오늘도 고생 많으셨어요.",
+  },
+
+  game: {
+    title: "🤫 Don't Hmm",
+    liveHint: "30초 동안 아무 소리도, 행동도 하지 마세요.",
+    tapHint: "동료가 소리를 냈다면 누르세요.",
+    tapButton: "소리 냈다",
+    waitingTitle: "오늘 판은 아직이에요",
+    waitingHint: "업무시간 중 예고 없이 딱 한 번 시작돼요. 알림을 켜두면 놓치지 않아요.",
+    noRound: "아직 진행된 판이 없어요. 첫 판을 기다려주세요.",
+    doneTitle: "이번 판 끝!",
+    myCount: (n: number) => `${n}번 눌렀어요.`,
+    roundRanking: "이번 판 순위",
+    rankingEmpty: "아직 아무도 누르지 않았어요. 평화로운 하루네요.",
+    pushEnable: "알림 켜기",
+    pushDisable: "알림 끄기",
+    pushOn: "알림이 켜져 있어요.",
+    pushOff: "알림을 켜두면 판이 시작될 때 알려드려요.",
+    pushDenied: "브라우저에서 알림이 막혀 있어요. 사이트 설정에서 알림을 허용해주세요.",
+    pushFailed: "알림을 켜지 못했어요. 잠시 후 다시 시도해주세요.",
+    pushUnsupported:
+      "이 브라우저에서는 알림을 켤 수 없어요. 아이폰은 사파리에서 공유 > 홈 화면에 추가 로 설치한 뒤 열어주세요.",
+  },
+
+  auth: {
+    loginButton: "카카오로 로그인",
+    loginShort: "로그인",
+    logout: "로그아웃",
+    linkTitle: "이름을 연결해주세요",
+    linkHint: "이 카카오 계정으로 쓸 이름을 한 번만 골라주세요. 다음부터는 바로 열려요.",
+    linkPick: "기존 이름에 연결하기",
+    linkCreate: "새 이름으로 시작하기",
+    linkCreatePlaceholder: "이름 (예: 김대리)",
+    linkSubmit: "시작",
+    linkFailed: "연결하지 못했어요. 다른 이름을 골라주세요.",
+    duplicateName: "이미 있는 이름이에요.",
+    callback: "로그인 중이에요...",
+    callbackFailed: "로그인에 실패했어요. 처음 화면에서 다시 시도해주세요.",
+    missingKakaoKey:
+      "카카오 앱 키가 설정되지 않았어요. NEXT_PUBLIC_KAKAO_REST_API_KEY 환경변수를 확인해주세요.",
   },
 
   manage: {
@@ -79,6 +163,32 @@ export const TEXT = {
 
 /** 새 버전이 나오면 배열 맨 앞에 추가하세요. 헤더 벨 뱃지 + 모달에 자동 반영돼요. */
 export const PATCH_NOTES = [
+  {
+    version: "2.4.0",
+    date: "2026-09-22",
+    items: [
+      "랭킹 탭이 생겼어요 — [가장 부지런한 동료를 둔 친구] 와 [목표 지향적인 동료를 둔 친구] 두 부문이에요.",
+      "탑3 안에 들었으면 랭킹 탭에 들어갈 때 빵빠레가 울려요. 🎉",
+      "미니게임 누적 순위는 랭킹 탭으로 옮겼어요. 게임 탭에는 이번 판 순위만 남아요.",
+    ],
+  },
+  {
+    version: "2.3.0",
+    date: "2026-09-22",
+    items: [
+      "미니게임이 생겼어요 — 업무시간 중 예고 없이 한 번, 30초 동안 아무 소리도 내지 않기.",
+      "게임 탭에서 알림을 켜두면 판이 시작될 때 알려드려요. (아이폰은 홈 화면에 추가한 뒤에 켜주세요)",
+      "많이 누른 사람이 1등, 타이틀은 '가장 성실한 동료를 둔 친구'예요. 축하드립니다.",
+    ],
+  },
+  {
+    version: "2.2.0",
+    date: "2026-09-22",
+    items: [
+      "카카오 로그인이 생겼어요 — 로그인하면 이름을 고르지 않아도 내 화면이 바로 열려요.",
+      "처음 로그인할 때 쓰던 이름을 한 번만 연결하면, 그 뒤로는 기기를 바꿔도 그대로예요.",
+    ],
+  },
   {
     version: "2.1.0",
     date: "2026-09-22",

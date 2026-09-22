@@ -3,23 +3,93 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EMOJIS, POLL_MS, TEXT } from "@/config";
 import { fetchSnapshot, incrementItem, type Row } from "@/lib/api";
+import { useAuth } from "@/lib/useAuth";
 import { useSelectedUser } from "@/lib/useSelectedUser";
 import { readableTextColor } from "@/lib/color";
 import HmmFace from "@/components/HmmFace";
 import CardStyleEditor from "@/components/CardStyleEditor";
+import LinkUser from "@/components/LinkUser";
 
 const POPUP_MS = 900; // globals.css 의 .hc-pop 지속 시간과 같게
 const LONG_PRESS_MS = 2000;
+
+/** 한 줄에 최대 이만큼. 아무리 많아도 이보다 넓게는 안 깔아요. */
+const MAX_COLUMNS = 5;
+
+/**
+ * 카드 수에 따른 한 줄 개수.
+ *   2개 → 1줄에 1개 (위아래로)      3개 → 2 + 1        4개 → 2 + 2
+ *   5개 → 2 + 2 + 1                 6개 → 3 + 3        7개 → 3 + 3 + 1
+ *   8·9개 → 4씩                     10개 이상 → 5씩 (최대)
+ * 2개 이하는 한 줄에 하나, 그 위로는 "카드 수의 절반"이에요.
+ * 다만 3개는 절반이 1이라 그대로 두면 세로로 늘어서요. 그래서 하한이 2예요.
+ */
+function columnsFor(count: number): number {
+  if (count <= 2) return 1;
+  return Math.min(MAX_COLUMNS, Math.max(2, Math.floor(count / 2)));
+}
+
+/**
+ * 행위자 한 명의 카드를 바둑판처럼 깔아요. 열 수는 columnsFor 가 정해요.
+ * 폰에서 5열이면 한 칸이 60px 밖에 안 돼서, 열이 늘수록 글자와 여백을 같이 줄여요.
+ * 이름에는 break-keep 과 break-words 를 같이 줘요 — 평소엔 한국어 단어를 안 쪼개되,
+ * "주먹권발차기유때림" 처럼 띄어쓰기 없이 긴 말은 칸을 뚫으니 그때만 쪼개라는 뜻이에요.
+ * sm 이상은 칸이 넉넉하니 원래 크기로 돌아와요.
+ */
+function gridSizing(count: number) {
+  const columns = columnsFor(count);
+  if (columns <= 2) {
+    return {
+      columns,
+      pad: "p-4",
+      minHeight: "min-h-[180px] sm:min-h-[200px]",
+      nameClass: "break-keep break-words pr-8 text-[15px] leading-snug",
+      countClass: "text-5xl",
+      // tight: 칸이 좁아서 꾸미기 버튼을 폰에서만 숨겨요. (길게 누르면 그래도 열려요)
+      tight: false,
+    };
+  }
+  if (columns === 3) {
+    return {
+      columns,
+      pad: "p-3 sm:p-4",
+      minHeight: "min-h-[140px] sm:min-h-[170px]",
+      nameClass: "break-keep break-words pr-8 text-[13px] leading-snug sm:text-[15px]",
+      countClass: "text-3xl sm:text-4xl",
+      tight: false,
+    };
+  }
+  if (columns === 4) {
+    return {
+      columns,
+      pad: "p-2 sm:p-4",
+      minHeight: "min-h-[112px] sm:min-h-[160px]",
+      nameClass: "break-words text-[11px] leading-tight sm:break-keep sm:pr-8 sm:text-[15px]",
+      countClass: "text-base sm:text-4xl",
+      tight: true,
+    };
+  }
+  return {
+    columns,
+    pad: "p-2 sm:p-4",
+    minHeight: "min-h-[100px] sm:min-h-[150px]",
+    nameClass: "break-words text-[10px] leading-tight sm:break-keep sm:pr-8 sm:text-[15px]",
+    countClass: "text-sm sm:text-4xl",
+    tight: true,
+  };
+}
 
 type Pop = { key: number; emoji: string; x: number; y: number };
 
 /** 카드 하나. 롱프레스마다 독립된 타이머가 필요해서 .map() 밖으로 뺀 하위 컴포넌트예요. */
 function ItemCard({
   row,
+  sizing,
   onIncrement,
   onOpenStyle,
 }: {
   row: Row;
+  sizing: ReturnType<typeof gridSizing>;
   onIncrement: (row: Row, el: HTMLElement) => void;
   onOpenStyle: (row: Row) => void;
 }) {
@@ -72,7 +142,6 @@ function ItemCard({
     }
   };
 
-  const hasCustomStyle = Boolean(row.backgroundColor || row.backgroundImageUrl);
   const cardStyle: React.CSSProperties = row.backgroundImageUrl
     ? {
         backgroundImage: `linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.55)), url(${row.backgroundImageUrl})`,
@@ -88,9 +157,6 @@ function ItemCard({
           borderColor: "transparent",
         }
       : {};
-  const badgeClass = hasCustomStyle
-    ? "rounded-full bg-black/15 px-2.5 py-0.5 text-xs font-medium"
-    : "rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-600";
 
   return (
     <div
@@ -104,7 +170,10 @@ function ItemCard({
       onPointerCancel={cancelPress}
       onPointerLeave={cancelPress}
       style={cardStyle}
-      className="relative flex min-h-[148px] cursor-pointer flex-col justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-neutral-300 active:scale-[0.97] active:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+      className={
+        "relative flex cursor-pointer flex-col justify-between gap-2 overflow-hidden rounded-2xl border border-neutral-200 bg-white text-left transition hover:border-neutral-300 active:scale-[0.97] active:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 sm:gap-3 " +
+        `${sizing.pad} ${sizing.minHeight}`
+      }
     >
       <button
         type="button"
@@ -114,16 +183,17 @@ function ItemCard({
           e.stopPropagation();
           onOpenStyle(row);
         }}
-        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/10 text-sm hover:bg-black/20"
+        className={
+          "absolute right-2 top-2 h-8 w-8 items-center justify-center rounded-full bg-black/10 text-sm hover:bg-black/20 " +
+          (sizing.tight ? "hidden sm:flex" : "flex")
+        }
       >
         ⋯
       </button>
 
-      <span className="flex flex-col items-start gap-2">
-        <span className={badgeClass}>{row.actor}</span>
-        <span className="break-keep text-[15px] font-medium leading-snug">{row.name}</span>
-      </span>
-      <span className="text-4xl font-semibold tabular-nums tracking-tight">
+      {/* 행위자 이름은 바로 위 섹션 제목에 있어서 카드 안에는 안 넣어요. */}
+      <span className={`min-w-0 font-medium ${sizing.nameClass}`}>{row.name}</span>
+      <span className={`font-semibold tabular-nums tracking-tight ${sizing.countClass}`}>
         {row.count.toLocaleString()}
       </span>
     </div>
@@ -132,6 +202,7 @@ function ItemCard({
 
 export default function HabitCounter() {
   const { user } = useSelectedUser();
+  const { status: authStatus, displayName } = useAuth();
   const [users, setUsers] = useState<string[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [rowsFor, setRowsFor] = useState<string | null>(null); // rows 가 누구 것인지
@@ -234,23 +305,18 @@ export default function HabitCounter() {
         </p>
       )}
 
-      {status === "ready" && users.length === 0 && (
+      {/* 로그인했지만 아직 이름을 연결하지 않음 (최초 1회) */}
+      {authStatus === "needsLink" && <LinkUser defaultName={displayName} />}
+
+      {/* 로그인 직후, AppShell 이 해시에 이름을 넣어주기 전 */}
+      {authStatus === "ready" && !current && (
         <p className="rounded-2xl bg-neutral-50 px-5 py-4 text-sm text-neutral-600">
-          {TEXT.emptyAll}
+          {TEXT.loading}
         </p>
       )}
 
-      {/* 아직 선택 전 */}
-      {status === "ready" && users.length > 0 && !current && (
-        <>
-          <HmmFace size={104} className="mb-6 text-neutral-900" />
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{TEXT.pickTitle}</h1>
-          <p className="mt-2 text-neutral-500">{TEXT.pickHint}</p>
-        </>
-      )}
-
-      {/* 선택 후: 행위자별 버튼들 */}
-      {status === "ready" && current && (
+      {/* 내 화면: 행위자별 버튼들 */}
+      {authStatus === "ready" && status === "ready" && current && (
         <>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{current}</h1>
           {rowsReady && <p className="mt-2 text-neutral-500">{TEXT.totalSuffix(total)}</p>}
@@ -261,21 +327,36 @@ export default function HabitCounter() {
             </p>
           )}
 
-          {groups.map(([actor, items]) => (
-            <section key={actor} className="mt-10">
-              <div className="flex items-baseline justify-between">
-                <h2 className="text-xl font-semibold tracking-tight">{actor}</h2>
-                <span className="text-sm tabular-nums text-neutral-400">
-                  {items.reduce((s, r) => s + r.count, 0).toLocaleString()}
-                </span>
-              </div>
-              <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:gap-4">
-                {items.map((row) => (
-                  <ItemCard key={row.id} row={row} onIncrement={increment} onOpenStyle={setEditingRow} />
-                ))}
-              </div>
-            </section>
-          ))}
+          {groups.map(([actor, items]) => {
+            const sizing = gridSizing(items.length);
+            return (
+              <section key={actor} className="mt-10">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="text-xl font-semibold tracking-tight">{actor}</h2>
+                  <span className="text-sm tabular-nums text-neutral-400">
+                    {items.reduce((s, r) => s + r.count, 0).toLocaleString()}
+                  </span>
+                </div>
+                <div
+                  className="mt-4 grid gap-2 sm:gap-4"
+                  style={{
+                    // minmax(0,1fr) 이어야 긴 행위명이 칸을 밀어내지 않아요.
+                    gridTemplateColumns: `repeat(${sizing.columns}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {items.map((row) => (
+                    <ItemCard
+                      key={row.id}
+                      row={row}
+                      sizing={sizing}
+                      onIncrement={increment}
+                      onOpenStyle={setEditingRow}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </>
       )}
 

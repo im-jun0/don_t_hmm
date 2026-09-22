@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { NAV, POLL_MS, TEXT } from "@/config";
-import { fetchUsers } from "@/lib/api";
+import { NAV, TEXT } from "@/config";
+import { useAuth } from "@/lib/useAuth";
 import { useSelectedUser } from "@/lib/useSelectedUser";
+import AuthMenu from "@/components/AuthMenu";
 import HmmFace from "@/components/HmmFace";
+import LoginScreen from "@/components/LoginScreen";
 import PatchNotes from "@/components/PatchNotes";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, selectUser } = useSelectedUser();
-  const [users, setUsers] = useState<string[]>([]);
+  const { status: authStatus, me, displayName } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -27,23 +29,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("mousedown", onClick);
   }, [menuOpen]);
 
+  // 로그인한 사람의 이름을 해시(#/이름)에 넣어줘요. 화면들은 예전처럼 해시만 보면 돼요.
+  // 이미 다른 이름이 들어있으면(항목관리에서 고른 경우) 건드리지 않아요.
   useEffect(() => {
-    let cancelled = false;
-    const load = () => fetchUsers().then((rows) => {
-      if (!cancelled) setUsers(rows.map((r) => r.name));
-    }).catch(() => {});
-    load();
-    const t = setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+    if (authStatus === "ready" && me && !user) selectUser(me.name);
+  }, [authStatus, me, user, selectUser]);
+
+  // 메뉴로 이동할 때 선택된 사람(#/이름)을 같이 들고 다녀요.
+  // 안 붙이면 이동하는 순간 해시가 날아가서 "누구 화면인지"를 잃고 빈 화면이 잠깐 보여요.
+  const navHash = user ? `#/${encodeURIComponent(user)}` : "";
+
+  // 로그인 콜백은 세션을 만드는 중이라 로그인 화면으로 되돌리면 안 돼요.
+  if (pathname === "/auth/callback") return <>{children}</>;
+
+  // 로그인 전에는 헤더도 탭바도 없이 로그인 화면만 보여요.
+  if (authStatus === "loading") return <div className="min-h-screen bg-white" />;
+  if (authStatus === "signedOut") return <LoginScreen />;
 
   return (
     <div className="min-h-screen bg-white text-neutral-900">
       <header className="sticky top-0 z-40 border-b border-neutral-100 bg-white/85 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 pt-3">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-3">
           <Link
             href="/"
             onClick={() => selectUser(null)}
@@ -54,6 +60,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-1">
+            <AuthMenu displayName={displayName} />
             <PatchNotes />
 
             {/* 데스크톱: 햄버거 메뉴 */}
@@ -74,7 +81,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   {NAV.map((item) => (
                     <Link
                       key={item.key}
-                      href={item.href}
+                      href={item.href + navHash}
                       onClick={() => setMenuOpen(false)}
                       className={
                         "block px-4 py-2 text-sm font-medium transition " +
@@ -91,31 +98,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
-
-        <nav
-          aria-label="사용자 선택"
-          className="no-scrollbar mx-auto flex max-w-3xl gap-2 overflow-x-auto px-5 pb-3 pt-2"
-        >
-          {users.map((name) => {
-            const on = name === user;
-            return (
-              <button
-                key={name}
-                type="button"
-                aria-pressed={on}
-                onClick={() => selectUser(name)}
-                className={
-                  "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 " +
-                  (on
-                    ? "bg-neutral-900 text-white"
-                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200")
-                }
-              >
-                {name}
-              </button>
-            );
-          })}
-        </nav>
       </header>
 
       <div className="pb-28 sm:pb-0">{children}</div>
@@ -131,7 +113,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           return (
             <Link
               key={item.key}
-              href={item.href}
+              href={item.href + navHash}
               className={
                 "flex flex-1 flex-col items-center justify-center gap-1 py-4 text-sm font-medium active:bg-neutral-50 " +
                 (on ? "text-neutral-900" : "text-neutral-400")

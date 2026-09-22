@@ -158,3 +158,201 @@ export async function deleteItem(pin: string, id: string): Promise<void> {
   const { error } = await supabase.rpc("admin_delete_item", { p_pin: pin, p_id: id });
   if (error) throw error;
 }
+
+/* ── 카카오 로그인 (Supabase Auth) ── */
+
+/** 로그인한 카카오 계정에 연결된 사용자. 아직 이름을 연결하지 않았으면 null. */
+export async function fetchMyUser(): Promise<UserRow | null> {
+  assertReady();
+  const { data, error } = await supabase.rpc("my_user");
+  if (error) throw error;
+  const row = (data ?? [])[0];
+  return row ? { id: row.id, name: row.name, sortOrder: row.sort_order } : null;
+}
+
+/** 아직 아무 카카오 계정과도 연결되지 않은 사용자 목록 (최초 1회 이름 연결 화면) */
+export async function fetchUnlinkedUsers(): Promise<UserRow[]> {
+  assertReady();
+  const { data, error } = await supabase.rpc("unlinked_users");
+  if (error) throw error;
+  return (data ?? []).map((u: { id: string; name: string; sort_order: number }) => ({
+    id: u.id,
+    name: u.name,
+    sortOrder: u.sort_order,
+  }));
+}
+
+/** 기존 사용자 행을 내 카카오 계정에 연결해요. */
+export async function claimUser(userId: string): Promise<void> {
+  assertReady();
+  const { error } = await supabase.rpc("claim_user", { p_user_id: userId });
+  if (error) throw error;
+}
+
+/** 새 이름으로 사용자를 만들고 내 카카오 계정에 연결해요. */
+export async function createMyUser(name: string): Promise<void> {
+  assertReady();
+  const { error } = await supabase.rpc("create_my_user", { p_name: name });
+  if (error) throw error;
+}
+
+const KAKAO_AUTHORIZE_URL = "https://kauth.kakao.com/oauth/authorize";
+const KAKAO_STATE_KEY = "donthmm:kakao_state";
+
+/**
+ * 카카오 로그인 페이지로 보내요. 끝나면 /auth/callback 으로 돌아와요.
+ *
+ * supabase.auth.signInWithOAuth("kakao") 를 안 써요. 그 경로는 Supabase 가
+ * account_email 까지 같이 요청하는데, 그건 비즈 앱에서만 켤 수 있는 동의항목이라
+ * 개인 개발자 앱에서는 KOE205 로 로그인이 막혀요. 클라이언트에서 그 스코프를 뺄 방법도 없고요.
+ * 그래서 인가만 우리가 직접 받아요 — 필요한 건 닉네임뿐이니까 scope 도 딱 그만큼만.
+ * 받은 ID 토큰은 /auth/callback 에서 signInWithIdToken 으로 Supabase 에 넘겨요.
+ */
+export async function signInWithKakao(): Promise<void> {
+  assertReady();
+  const restApiKey = process.env.NEXT_PUBLIC_KAKAO_REST_API_KEY;
+  if (!restApiKey) throw new Error(TEXT.auth.missingKakaoKey);
+
+  // 돌아왔을 때 내가 보낸 요청이 맞는지 확인하는 값 (CSRF 방지)
+  const state = crypto.randomUUID();
+  sessionStorage.setItem(KAKAO_STATE_KEY, state);
+
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: restApiKey,
+    redirect_uri: `${window.location.origin}/auth/callback`,
+    scope: "openid profile_nickname", // openid 가 있어야 ID 토큰이 나와요
+    state,
+  });
+  window.location.href = `${KAKAO_AUTHORIZE_URL}?${params}`;
+}
+
+/** 돌아온 인가 코드를 세션으로 바꿔요. state 가 안 맞으면 내가 시작한 로그인이 아니에요. */
+export async function completeKakaoSignIn(code: string, state: string | null): Promise<void> {
+  assertReady();
+  const expected = sessionStorage.getItem(KAKAO_STATE_KEY);
+  sessionStorage.removeItem(KAKAO_STATE_KEY);
+  if (!expected || expected !== state) throw new Error("state mismatch");
+
+  const res = await fetch("/api/auth/kakao", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.idToken) throw new Error(data.error || "token exchange failed");
+
+  const { error } = await supabase.auth.signInWithIdToken({
+    provider: "kakao",
+    token: data.idToken,
+  });
+  if (error) throw error;
+}
+
+export async function signOut(): Promise<void> {
+  assertReady();
+  await supabase.auth.signOut();
+}
+
+/* ── 미니게임 ── */
+
+export type GameStatus = "waiting" | "live" | "done";
+export type GameState = {
+  roundId: string;
+  status: GameStatus;
+  /** 진행 중이거나 끝난 판만 값이 있어요. 대기 중엔 시작 시각을 숨겨요. */
+  endsAt: string | null;
+  /** 기기 시계가 틀어져 있어도 타이머가 맞도록 서버 시각을 같이 받아요. */
+  serverNow: string;
+  myCount: number;
+};
+export type RankRow = { rank: number; name: string; count: number; isMe: boolean };
+export type LeaderRow = RankRow & { rounds: number };
+
+/** 지금 판 상태. 아직 한 판도 없었으면 null. */
+export async function fetchGameState(): Promise<GameState | null> {
+  assertReady();
+  const { data, error } = await supabase.rpc("game_state");
+  if (error) throw error;
+  const row = (data ?? [])[0];
+  if (!row) return null;
+  return {
+    roundId: row.round_id,
+    status: row.status as GameStatus,
+    endsAt: row.ends_at,
+    serverNow: row.server_now,
+    myCount: row.my_count,
+  };
+}
+
+/** 한 번 누르고 서버가 알려주는 최종 숫자를 돌려줘요. */
+export async function gameTap(roundId: string): Promise<number> {
+  assertReady();
+  const { data, error } = await supabase.rpc("game_tap", { p_round_id: roundId });
+  if (error) throw error;
+  return data as number;
+}
+
+export async function fetchGameRanking(roundId: string): Promise<RankRow[]> {
+  assertReady();
+  const { data, error } = await supabase.rpc("game_ranking", { p_round_id: roundId });
+  if (error) throw error;
+  return (data ?? []).map((r: { rank: number; name: string; count: number; is_me: boolean }) => ({
+    rank: r.rank,
+    name: r.name,
+    count: r.count,
+    isMe: r.is_me,
+  }));
+}
+
+export async function fetchGameLeaderboard(days: number): Promise<LeaderRow[]> {
+  assertReady();
+  const { data, error } = await supabase.rpc("game_leaderboard", { p_days: days });
+  if (error) throw error;
+  return (data ?? []).map(
+    (r: { rank: number; name: string; count: number; rounds: number; is_me: boolean }) => ({
+      rank: r.rank,
+      name: r.name,
+      count: r.count,
+      rounds: r.rounds,
+      isMe: r.is_me,
+    })
+  );
+}
+
+/* ── 랭킹 ── */
+
+/** 사용자별 누적 카운트 순위. 많이 쌓인 사람이 1등이에요. */
+export async function fetchTotalLeaderboard(): Promise<RankRow[]> {
+  assertReady();
+  const { data, error } = await supabase.rpc("total_leaderboard");
+  if (error) throw error;
+  return (data ?? []).map((r: { rank: number; name: string; count: number; is_me: boolean }) => ({
+    rank: r.rank,
+    name: r.name,
+    count: r.count,
+    isMe: r.is_me,
+  }));
+}
+
+/* ── 푸시 알림 구독 ── */
+
+export async function savePushSubscription(
+  endpoint: string,
+  p256dh: string,
+  auth: string
+): Promise<void> {
+  assertReady();
+  const { error } = await supabase.rpc("save_push_subscription", {
+    p_endpoint: endpoint,
+    p_p256dh: p256dh,
+    p_auth: auth,
+  });
+  if (error) throw error;
+}
+
+export async function deletePushSubscription(endpoint: string): Promise<void> {
+  assertReady();
+  const { error } = await supabase.rpc("delete_push_subscription", { p_endpoint: endpoint });
+  if (error) throw error;
+}

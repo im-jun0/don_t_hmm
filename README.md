@@ -1,7 +1,7 @@
 # don't hmm
 
 Supabase를 DB로 쓰는 카운터 웹페이지예요. (Next.js 15 + Tailwind, Vercel 배포)
-상단에서 사용자(나)를 고르면 내 행위자별 행동 버튼이 나오고, 누를 때마다 카운트가 올라가요.
+카카오로 로그인하면 내 행위자별 행동 버튼이 나오고, 누를 때마다 카운트가 올라가요.
 메뉴에서 현황(그래프)을 보거나, 항목관리에서 사용자/항목을 직접 관리할 수 있어요.
 
 ## 1. Supabase 프로젝트 만들기
@@ -14,20 +14,186 @@ Supabase를 DB로 쓰는 카운터 웹페이지예요. (Next.js 15 + Tailwind, V
 
 > 스키마를 나중에 바꾸고 싶으면 `supabase/schema.sql`을 고치고 SQL Editor에서 다시 실행하면 돼요.
 
-## 2. 로컬에서 실행
+## 2. 카카오 로그인 연결하기
+
+이 앱은 **닉네임만** 받아요. 이메일은 요청하지도, 저장하지도 않아요.
+그래서 **비즈 앱 전환이 필요 없어요.** (이유는 아래 "이메일 동의항목 없이 쓰는 법" 참고)
+
+1. [developers.kakao.com](https://developers.kakao.com) 에서 애플리케이션을 하나 만들어요.
+2. **앱 설정 > 앱 키** 의 **REST API 키**를 복사해둬요.
+3. **제품 설정 > 카카오 로그인** 을 **ON** 으로 켜요.
+4. 같은 화면에서 **OpenID Connect** 를 **ON** 으로 켜요. ⚠️ 이거 안 켜면 ID 토큰이 안 나와서 로그인이 안 돼요.
+5. **제품 설정 > 카카오 로그인 > 보안** 에서 **Client Secret** 을 생성하고 활성화해요.
+6. **제품 설정 > 카카오 로그인 > Redirect URI** 에 **이 앱 주소**를 등록해요.
+   (Supabase 주소가 아니에요 — 인가 코드를 우리가 직접 받아요)
+
+   ```
+   http://localhost:3000/auth/callback
+   https://내앱.vercel.app/auth/callback
+   ```
+
+7. **제품 설정 > 카카오 로그인 > 동의항목** 에서 **닉네임(profile_nickname)** 만 **필수 동의**로 켜요.
+   **카카오계정(이메일)은 건드리지 않아요.** ("사용 안함" 그대로 두면 돼요)
+8. Supabase 프로젝트 > **Authentication > Sign In / Providers > Kakao** 를 켜고,
+   2번의 REST API 키를 **Client ID** 에 넣고, **Allow users without an email** 을 **켠 뒤** 저장해요.
+   (Client Secret 칸은 비워둬도 돼요. Supabase 는 ID 토큰 검증에만 쓰이고 카카오에 직접 요청하지 않아요)
+9. `.env.local` 과 Vercel Environment Variables 에 넣어요.
+
+   | 이름 | 값 |
+   | --- | --- |
+   | `NEXT_PUBLIC_KAKAO_REST_API_KEY` | 2번의 REST API 키 |
+   | `KAKAO_CLIENT_SECRET` | 5번의 Client Secret (`NEXT_PUBLIC_` 금지) |
+
+### 이메일 동의항목 없이 쓰는 법
+
+보통 Supabase 의 카카오 로그인(`signInWithOAuth`)을 쓰면 **이메일을 뺄 수가 없어요.**
+Supabase Auth 가 카카오에 보낼 스코프를 서버에 **하드코딩**해두고 있거든요.
+([auth/internal/api/provider/kakao.go](https://github.com/supabase/auth/blob/master/internal/api/provider/kakao.go))
+
+```go
+oauthScopes := []string{"account_email", "profile_image", "profile_nickname"}
+if scopes != "" {
+    oauthScopes = append(oauthScopes, strings.Split(scopes, ",")...)  // 덮어쓰기가 아니라 덧붙이기
+}
+```
+
+`signInWithOAuth` 의 `scopes` 옵션은 이 목록을 **줄이지 못하고 뒤에 붙이기만** 해요.
+그런데 `account_email` 은 **비즈 앱에서만** 켤 수 있는 동의항목이라,
+개인 개발자 앱에서는 로그인이 아예 이렇게 막혀요.
+
+```
+잘못된 요청 (KOE205)
+설정하지 않은 카카오 로그인 동의 항목을 포함해 인가 코드를 요청했습니다.
+설정하지 않은 동의 항목: account_email
+```
+
+**그래서 이 앱은 인가를 직접 받아요.**
+
+```
+브라우저 → kauth.kakao.com/oauth/authorize?scope=openid profile_nickname   (우리가 만든 주소)
+        ← 인가 코드
+서버   → kauth.kakao.com/oauth/token                (client secret 이 필요해서 서버에서)
+        ← ID 토큰
+브라우저 → supabase.auth.signInWithIdToken({ provider: "kakao", token })
+```
+
+Supabase 는 **다 끝난 ID 토큰을 검증만** 해요. 카카오한테 직접 뭘 요청하지 않으니
+하드코딩된 `account_email` 이 낄 자리가 없어요. 그래서 비즈 앱 전환도 필요 없어요.
+
+관련 코드는 [`src/lib/api.ts`](src/lib/api.ts) 의 `signInWithKakao` / `completeKakaoSignIn` 과
+[`src/app/api/auth/kakao/route.ts`](src/app/api/auth/kakao/route.ts) 예요.
+
+> 나중에 이메일이 정말 필요해지면 그때 비즈 앱으로 전환하고
+> `signInWithOAuth({ provider: "kakao" })` 한 줄로 되돌리면 돼요.
+
+### 처음 로그인할 때
+
+카카오 계정 1개가 사용자 1명과 연결돼요. 처음 로그인하면 **이름 연결 화면**이 한 번 떠요.
+- 이미 `users` 에 내 이름이 있으면(기존 사용자) 그 이름을 눌러서 연결해요 — 쌓아둔 카운트가 그대로 이어져요.
+- 없으면 새 이름을 적어서 시작하면 돼요.
+
+연결은 계정당 한 번이고, 그 뒤로는 로그인만 하면 내 화면이 바로 열려요.
+다시 연결하려면 Supabase 의 `users` 테이블에서 해당 행의 `auth_user_id` 를 비우면 돼요.
+
+## 3. 로컬에서 실행
 
 ```bash
 npm install
-cp .env.example .env.local   # 열어서 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY 붙여넣기
+cp .env.example .env.local   # 열어서 값 채우기 (Supabase 2개 + 카카오 2개는 필수)
 npm run dev                  # http://localhost:3000
 ```
 
-## 3. Vercel 배포
+## 4. 미니게임 알림 설정하기
+
+미니게임은 **하루 한 판, 업무시간(기본 10~18시 KST) 중 예고 없는 랜덤 시각**에 시작돼요.
+그 시각에 구독자 전원에게 웹 푸시를 쏘는 게 `/api/cron/tick` 이에요.
+
+### 4-1. VAPID 키 만들기
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+나온 값을 `.env.local` 과 Vercel Environment Variables 에 넣어요.
+
+| 이름 | 값 |
+| --- | --- |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Public Key |
+| `VAPID_PRIVATE_KEY` | Private Key (절대 `NEXT_PUBLIC_` 금지) |
+| `VAPID_SUBJECT` | `mailto:내메일@example.com` |
+| `CRON_SECRET` | 아무 긴 랜덤 문자열 |
+| `SUPABASE_SECRET_KEY` | Supabase Settings > API 의 secret key |
+
+### 4-2. 스케줄러 연결하기
+
+`/api/cron/tick` 은 **몇 번을 불러도 결과가 같게** 만들어져 있어요. 몇 분마다 한 번씩 때려주기만 하면 돼요.
+(오늘 판이 없으면 만들고, 시작 시각이 지났는데 아직 안 쐈으면 쏘고, 그 외에는 아무것도 안 해요.)
+
+**방법 A — Vercel Cron** (`vercel.json` 에 이미 들어있어요, 5분 간격)
+
+> ⚠️ Vercel **Hobby 플랜은 cron 이 하루 1회로 제한**돼요. 그러면 랜덤 시각에 알림이 못 나가요.
+> Hobby 를 쓰는 중이면 아래 방법 B 를 쓰세요.
+
+**방법 B — Supabase pg_cron** (무료, 플랜 제한 없음)
+
+Supabase SQL Editor 에서 한 번 실행해요. `<배포주소>` 와 `<CRON_SECRET>` 은 본인 값으로 바꿔주세요.
+
+```sql
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+select cron.schedule(
+  'dont-hmm-tick',
+  '*/5 * * * *',
+  $$
+  select net.http_get(
+    url := 'https://<배포주소>/api/cron/tick',
+    headers := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb
+  );
+  $$
+);
+```
+
+### 4-3. 사용자가 알림 켜기
+
+게임 탭에서 **알림 켜기** 를 누르면 돼요.
+
+- **아이폰**: 사파리에서 **공유 > 홈 화면에 추가** 로 설치한 뒤, 그 아이콘으로 열어야 알림 버튼이 나와요. (iOS 웹 푸시 제약)
+- **안드로이드 / 데스크톱**: 브라우저에서 바로 켜져요.
+
+### 4-4. 시간대·길이 바꾸기
+
+`src/config.ts` 의 `GAME` 에서 바꿔요.
+
+```ts
+export const GAME = {
+  durationSec: 30,      // 한 판 길이
+  windowStartHour: 10,  // 이 시간대(KST) 안에서 랜덤으로 시작
+  windowEndHour: 18,
+  leaderboardDays: 30,  // 누적 순위 기간
+};
+```
+
+랭킹 타이틀은 같은 파일의 `RANK_TITLES` / `LAST_RANK_TITLE` 에 있어요.
+
+## 5. Vercel 배포
 
 1. 이 폴더를 GitHub에 올려요.
 2. Vercel에서 **Add New → Project** 로 해당 저장소를 가져와요.
-3. **Environment Variables** 에 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 를 등록해요.
-4. Deploy!
+3. **Environment Variables** 에 `.env.local` 에 넣은 값을 그대로 등록해요.
+
+   | 이름 | 없으면 |
+   | --- | --- |
+   | `NEXT_PUBLIC_SUPABASE_URL` | 아무것도 안 돌아가요 |
+   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 〃 |
+   | `NEXT_PUBLIC_KAKAO_REST_API_KEY` | 로그인이 안 돼요 |
+   | `KAKAO_CLIENT_SECRET` | 〃 (Client Secret 을 켠 경우) |
+   | `SUPABASE_SECRET_KEY` | 미니게임 판이 안 열려요 |
+   | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | 게임 알림이 안 가요 |
+   | `CRON_SECRET` | 〃 |
+
+4. 배포한 주소를 **카카오 Redirect URI** (2번 6단계) 에도 추가했는지 확인해요.
+5. Deploy!
 
 ## 사용자 / 항목 관리
 
@@ -41,6 +207,9 @@ PIN은 `supabase/schema.sql` 실행 시 넣은 `admin_pin` 값이에요.
 
 ## 참고
 
-- 접속하는 누구나 메인 화면의 버튼을 누를 수 있어요. (로그인 없음) 사내 공유용으로 링크만 돌리는 용도예요.
-- 링크 끝에 `#/김대리` 처럼 사용자 이름을 붙이면 그 사용자 화면으로 바로 열려요.
+- 사이트 전체가 카카오 로그인 뒤에 있어요. 로그인하면 내 화면이 바로 열려요.
+- 미니게임은 하루 한 판이에요. 많이 누를수록 1등인데, 그건 내 동료가 그만큼 시끄러웠다는 뜻이에요.
+- 랭킹 탭에는 두 부문이 있어요 — 누적 카운트(가장 부지런한 동료를 둔 친구)와 미니게임 누적(목표 지향적인 동료를 둔 친구).
+- 탑3 안에 들면 랭킹 탭에 들어갈 때 색종이가 날리고 팡파레가 울려요. 부문 이름은 `src/config.ts` 의 `TEXT.ranking` 에서 바꿔요.
+- 로그인한 사람은 누구나 카운트를 올릴 수 있어요 — 사내 공유용이라 계정 화이트리스트는 없어요.
 - 항목관리는 PIN으로 보호되지만, PIN은 DB 함수에서만 검증돼요 — publishable 키가 노출돼도 PIN 없이는 데이터를 못 고쳐요.

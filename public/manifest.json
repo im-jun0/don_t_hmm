@@ -1,0 +1,19 @@
+{
+  "name": "don't hmm",
+  "short_name": "don't hmm",
+  "description": "당신의 동료는 지금 몇 번이나 아무 의미 없이 소리를 냈을까요?",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
