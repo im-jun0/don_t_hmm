@@ -168,20 +168,23 @@ export default function StatsView() {
           <section className="mt-10">
             <h2 className="text-lg font-semibold tracking-tight">{TEXT.stats.todayTitle}</h2>
             <p className="mt-1 text-xs text-neutral-400">{TEXT.stats.todayHint}</p>
-            {/* 0 이어도 이름은 보여줘요. 누가 조용한지도 정보니까요. */}
-            <ul className="mt-4 divide-y divide-neutral-100 border-y border-neutral-100">
+            {/* 한 명당 한 줄짜리 작은 카드. 0 이어도 이름은 보여줘요 — 누가 조용한지도 정보니까요. */}
+            <ul className="mt-4 flex flex-col gap-2">
               {today.map((t) => (
                 <li
                   key={t.name}
                   className={
-                    "flex items-baseline gap-3 py-2.5 text-sm " +
-                    (t.isMe ? "font-semibold text-neutral-900" : "text-neutral-600")
+                    "flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm " +
+                    (t.isMe
+                      ? "border-neutral-900 bg-neutral-50 font-semibold text-neutral-900"
+                      : "border-neutral-200 text-neutral-600")
                   }
                 >
                   <span className="min-w-0 flex-1 truncate">{t.name}</span>
                   <span
                     className={
-                      "shrink-0 tabular-nums " + (t.count === 0 ? "text-neutral-300" : "")
+                      "shrink-0 text-base tabular-nums " +
+                      (t.count === 0 ? "text-neutral-300" : "font-semibold text-neutral-900")
                     }
                   >
                     {t.count.toLocaleString()}
