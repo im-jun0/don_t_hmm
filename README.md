@@ -124,44 +124,62 @@ npx web-push generate-vapid-keys
 | `CRON_SECRET` | 아무 긴 랜덤 문자열 |
 | `SUPABASE_SECRET_KEY` | Supabase Settings > API 의 secret key |
 
-### 4-2. 스케줄러 연결하기
+### 4-2. 스케줄러 연결하기 (pg_cron)
 
-`/api/cron/tick` 은 **몇 번을 불러도 결과가 같게** 만들어져 있어요. 몇 분마다 한 번씩 때려주기만 하면 돼요.
-(오늘 판이 없으면 만들고, 시작 시각이 지났는데 아직 안 쐈으면 쏘고, 그 외에는 아무것도 안 해요.)
+Supabase 의 `pg_cron` 이 5분마다 `/api/cron/tick` 을 두드려요. Vercel Cron 은 안 써요 —
+Hobby 플랜은 cron 이 하루 1회로 제한돼서 랜덤 시각에 알림을 못 쏴요.
 
-**방법 A — Vercel Cron** (`vercel.json` 에 이미 들어있어요, 5분 간격)
+`/api/cron/tick` 은 **몇 번을 불러도 결과가 같게** 만들어져 있어서 주기는 자유롭게 잡아도 돼요.
+(판이 없으면 만들고, 시작 시각이 지났는데 아직 안 쐈으면 쏘고, 그 외에는 아무것도 안 해요.)
 
-> ⚠️ Vercel **Hobby 플랜은 cron 이 하루 1회로 제한**돼요. 그러면 랜덤 시각에 알림이 못 나가요.
-> Hobby 를 쓰는 중이면 아래 방법 B 를 쓰세요.
-
-**방법 B — Supabase pg_cron** (무료, 플랜 제한 없음)
-
-Supabase SQL Editor 에서 한 번 실행해요. `<배포주소>` 와 `<CRON_SECRET>` 은 본인 값으로 바꿔주세요.
+Supabase SQL Editor 에서 **한 번만** 실행하세요.
+`<배포주소>` 와 `<CRON_SECRET>` 은 본인 값으로 바꿔주세요.
 
 ```sql
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
-select cron.schedule(
-  'dont-hmm-tick',
-  '*/5 * * * *',
-  $$
+select cron.schedule('dont-hmm-tick', '*/5 * * * *', $job$
   select net.http_get(
     url := 'https://<배포주소>/api/cron/tick',
     headers := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb
   );
-  $$
-);
+$job$);
 ```
 
-### 4-3. 사용자가 알림 켜기
+확인은 `select * from cron.job;`, 해제는 `select cron.unschedule('dont-hmm-tick');` 이에요.
+잘 도는지는 `select * from cron.job_run_details order by start_time desc limit 10;` 으로 볼 수 있어요.
+
+> `pg_cron` 은 Supabase 대시보드 **Database > Extensions** 에서도 켤 수 있어요.
+> 위 `create extension` 이 권한 문제로 막히면 거기서 `pg_cron` 과 `pg_net` 을 먼저 켜주세요.
+
+### 4-3. 카드 숫자가 매일 0 부터 시작하는 방식
+
+**초기화하는 스케줄러는 없어요.** 지우는 작업이 없으니 크론이 안 돌아서 숫자가 안 맞을 일도 없어요.
+
+- 누를 때마다 `item_daily_counts` 의 **(항목, 오늘 날짜)** 행이 1 올라가요.
+- 카드는 그 행을 읽어요. 날짜가 바뀌면 그 날짜 행이 아직 없으니 **저절로 0** 이에요.
+- 누적은 예전처럼 `items.count` 에 그대로 쌓여요. 현황과 랭킹이 이걸 봐요.
+- 날짜 기준은 KST(`now() at time zone 'Asia/Seoul'`)예요. 서버가 UTC 여도 한국 자정에 바뀌어요.
+
+어제 몇 번이었는지 같은 것도 이력에 남아 있어서 나중에 꺼내 쓸 수 있어요.
+
+```sql
+-- 항목별 최근 7일
+select i.name, d.day, d.count
+  from item_daily_counts d join items i on i.id = d.item_id
+ where d.day >= (now() at time zone 'Asia/Seoul')::date - 6
+ order by d.day desc, d.count desc;
+```
+
+### 4-4. 사용자가 알림 켜기
 
 게임 탭에서 **알림 켜기** 를 누르면 돼요.
 
 - **아이폰**: 사파리에서 **공유 > 홈 화면에 추가** 로 설치한 뒤, 그 아이콘으로 열어야 알림 버튼이 나와요. (iOS 웹 푸시 제약)
 - **안드로이드 / 데스크톱**: 브라우저에서 바로 켜져요.
 
-### 4-4. 시간대·길이 바꾸기
+### 4-5. 시간대·길이 바꾸기
 
 `src/config.ts` 의 `GAME` 에서 바꿔요.
 

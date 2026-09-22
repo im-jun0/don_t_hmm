@@ -59,6 +59,17 @@ RLS is on for all four tables. `users`/`items` allow anon `select` only — no w
 - Optimistic increment in `HabitCounter`: bump local count immediately, call `increment_item`, reconcile with the server's authoritative count (handles concurrent taps from other people), roll back on failure. A `pending` ref count suppresses the poll loop from clobbering in-flight optimistic state.
 - Rows are grouped by `actor` client-side for rendering, preserving fetch order.
 
+### Today's count vs. running total
+
+The cards show **today only**; `/stats` and `/ranking` show the **running total**. These come from two different places and are not interchangeable.
+
+- **Today** lives in `item_daily_counts (item_id, day, count)`, keyed by the KST date. **There is no reset job.** When the date rolls over there is simply no row yet, so the card reads 0 on its own. Do not add a midnight cron to "clear" anything — a cron that fails to fire is the exact failure mode this design avoids.
+- **Total** stays in `items.count`, exactly as it always was. `/stats` and `total_leaderboard()` read it unchanged.
+
+`increment_item` bumps both in one call — `items.count` for the total, an upsert on `item_daily_counts` for today — and **returns today's number**, which is what the optimistic card reconciles against. `fetchSnapshot` no longer selects `items` directly; it calls `items_with_counts(p_user_id)`, which joins today's row and returns `today_count` + `total_count` in one trip.
+
+**Never rebuild the total by summing `item_daily_counts`.** Pre-migration history from the Google Sheets era exists only in `items.count` — it was never in `events`, so the backfilled history does not have it either. Summing the history would silently drop it.
+
 ### Rankings (`/ranking`)
 
 Two awards, both **most-first** and both sarcastic, same as the minigame: **가장 부지런한 동료를 둔 친구** (sum of `items.count` per user, `total_leaderboard()`) and **목표 지향적인 동료를 둔 친구** (cumulative minigame taps, reusing `game_leaderboard()`). A high score means your colleagues were noisy, not that you did well — keep the copy ironic.
@@ -75,7 +86,9 @@ One round per day at a random time inside `GAME.windowStartHour..windowEndHour` 
 - `game_tap()` re-checks that the round is live in SQL, so a tap arriving after the timer is rejected server-side, not just hidden in the UI.
 - **Ranking is most-taps-first and every title is sarcastic.** 1st place gets "가장 성실한 동료를 둔 친구" — you tapped the most, meaning your colleagues were the loudest. Titles live in `RANK_TITLES` / `LAST_RANK_TITLE` in `src/config.ts`. Do not "fix" the direction; it reads backwards on purpose.
 
-`src/app/api/cron/tick/route.ts` is the only server-side code in the repo (Node runtime, `CRON_SECRET` bearer, secret key). It is **idempotent by design** so the driving scheduler can tick at any interval: create today's round if missing, send the push if `start_at` has passed and `notified_at` is null, otherwise do nothing. It stamps `notified_at` *before* sending, via a conditional update on `is null`, so overlapping ticks cannot double-send. KST boundaries are computed with an explicit +9h offset because the server runs on UTC. `vercel.json` drives it every 5 minutes — but Vercel Hobby caps cron at once per day, so README §4-2 documents Supabase `pg_cron` + `pg_net` as the alternative.
+`src/app/api/cron/tick/route.ts` is the only server-side code in the repo (Node runtime, `CRON_SECRET` bearer, secret key). It is **idempotent by design** so the driving scheduler can tick at any interval: create today's round if missing, send the push if `start_at` has passed and `notified_at` is null, otherwise do nothing. It stamps `notified_at` *before* sending, via a conditional update on `is null`, so overlapping ticks cannot double-send. KST boundaries are computed with an explicit +9h offset because the server runs on UTC.
+
+**Scheduling is Supabase `pg_cron`, not Vercel Cron** (there is no `vercel.json`): Vercel Hobby caps cron at once per day, which cannot drive a random-time push. Two jobs, registered once by hand — see README §4-2. `dont-hmm-tick` hits `/api/cron/tick` every 5 minutes; `dont-hmm-daily-reset` calls `reset_daily_counts()` at 15:00 UTC (00:00 KST).
 
 Web push lives in `public/sw.js`, `public/manifest.json`, and `src/lib/push.ts`. iOS only allows push from a home-screen-installed PWA, which is why `pushSupported()` can be false on an iPhone in plain Safari and `TEXT.game.pushUnsupported` spells out the 홈 화면에 추가 step.
 

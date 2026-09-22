@@ -101,14 +101,15 @@ export default function StatsView() {
     return () => clearInterval(t);
   }, [user, load]);
 
-  const total = rows.reduce((s, r) => s + r.count, 0);
+  // 현황은 누적을 보여줘요. 카드의 count 는 오늘치라 자정마다 0 이 돼요.
+  const total = rows.reduce((s, r) => s + r.totalCount, 0);
   const actorCount = new Set(rows.map((r) => r.actor)).size;
 
   const barData = useMemo(
     () =>
       [...rows]
-        .sort((a, b) => b.count - a.count)
-        .map((r) => ({ label: `${r.actor} · ${r.name}`, count: r.count })),
+        .sort((a, b) => b.totalCount - a.totalCount)
+        .map((r) => ({ label: `${r.actor} · ${r.name}`, count: r.totalCount })),
     [rows]
   );
 
