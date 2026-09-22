@@ -80,6 +80,8 @@ export const TEXT = {
     totalLabel: "총 참은 횟수",
     itemLabel: "등록된 항목",
     actorLabel: "행위자 수",
+    todayTitle: "오늘 친구들",
+    todayHint: "자정이 지나면 다 같이 0 부터 다시 시작해요.",
     barTitle: "항목별 누적",
     lineTitle: "최근 14일 추이",
     lineNote: "추이는 전환 시점(오늘)부터 쌓여요. 이전 누적 총계는 막대그래프에 포함돼 있어요.",
@@ -183,6 +185,13 @@ export const TEXT = {
 
 /** 새 버전이 나오면 배열 맨 앞에 추가하세요. 헤더 벨 뱃지 + 모달에 자동 반영돼요. */
 export const PATCH_NOTES = [
+  {
+    version: "2.7.0",
+    date: "2026-09-23",
+    items: [
+      "현황에서 친구들이 오늘 몇 번 눌렀는지 한 줄씩 볼 수 있어요.",
+    ],
+  },
   {
     version: "2.6.0",
     date: "2026-09-23",

@@ -607,3 +607,27 @@ as $$
 $$;
 
 grant execute on function items_with_counts(uuid) to anon, authenticated;
+
+-- ── 오늘 다 같이 얼마나 눌렀나 (현황 페이지) ──
+-- 사용자마다 오늘치 합계를 돌려줘요. 많이 누른 사람이 위로 와요.
+-- 항목이 하나도 없는 사람도 0 으로 나와요 (left join).
+create or replace function today_by_user()
+returns table (name text, count int, is_me boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select u.name,
+         coalesce(sum(d.count), 0)::int as count,
+         u.auth_user_id = auth.uid() as is_me
+    from users u
+    left join items i on i.user_id = u.id
+    left join item_daily_counts d
+      on d.item_id = i.id
+     and d.day = (now() at time zone 'Asia/Seoul')::date
+   group by u.id, u.name, u.auth_user_id, u.sort_order
+   order by coalesce(sum(d.count), 0) desc, u.sort_order;
+$$;
+
+grant execute on function today_by_user() to anon, authenticated;

@@ -331,6 +331,18 @@ export async function fetchGameLeaderboard(days: number): Promise<LeaderRow[]> {
   );
 }
 
+/** 오늘 사용자별 클릭 합계. 현황 페이지의 "오늘 친구들" 줄에 써요. */
+export async function fetchTodayByUser(): Promise<{ name: string; count: number; isMe: boolean }[]> {
+  assertReady();
+  const { data, error } = await supabase.rpc("today_by_user");
+  if (error) throw error;
+  return (data ?? []).map((r: { name: string; count: number; is_me: boolean }) => ({
+    name: r.name,
+    count: r.count,
+    isMe: r.is_me,
+  }));
+}
+
 /* ── 랭킹 ── */
 
 /** 사용자별 누적 카운트 순위. 많이 쌓인 사람이 1등이에요. */
