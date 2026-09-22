@@ -63,28 +63,28 @@ export default function PatchNotes() {
             onClick={close}
           >
             <div
-              className="max-h-[80vh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl"
+              className="max-h-[85vh] min-h-[55vh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-white p-6 sm:min-h-0 sm:rounded-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold tracking-tight">패치노트</h2>
+                <h2 className="text-xl font-semibold tracking-tight">패치노트</h2>
                 <button
                   type="button"
                   onClick={close}
                   aria-label="닫기"
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100"
                 >
                   ✕
                 </button>
               </div>
-              <div className="mt-4 space-y-5">
+              <div className="mt-5 space-y-6">
                 {PATCH_NOTES.map((note) => (
                   <div key={note.version}>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-semibold">v{note.version}</span>
-                      <span className="text-xs text-neutral-400">{note.date}</span>
+                      <span className="text-base font-semibold">v{note.version}</span>
+                      <span className="text-sm text-neutral-400">{note.date}</span>
                     </div>
-                    <ul className="mt-1.5 list-disc space-y-1 pl-4 text-sm text-neutral-600">
+                    <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[15px] text-neutral-600">
                       {note.items.map((line, i) => (
                         <li key={i}>{line}</li>
                       ))}

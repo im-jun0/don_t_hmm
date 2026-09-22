@@ -118,7 +118,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </header>
 
-      <div className="pb-20 sm:pb-0">{children}</div>
+      <div className="pb-28 sm:pb-0">{children}</div>
 
       {/* 모바일: 하단 탭바 */}
       <nav
@@ -133,7 +133,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               key={item.key}
               href={item.href}
               className={
-                "flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium " +
+                "flex flex-1 flex-col items-center justify-center gap-1 py-4 text-sm font-medium active:bg-neutral-50 " +
                 (on ? "text-neutral-900" : "text-neutral-400")
               }
             >

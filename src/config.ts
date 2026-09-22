@@ -11,8 +11,8 @@ export const EMOJIS = [
 ];
 
 export const NAV = [
-  { key: "main", href: "/", label: "메인" },
   { key: "stats", href: "/stats", label: "현황" },
+  { key: "main", href: "/", label: "메인" },
   { key: "manage", href: "/manage", label: "항목관리" },
 ] as const;
 
