@@ -10,6 +10,12 @@ export const EMOJIS = [
   "😡", "🤬", "😤", "😠", "💢", "😞", "😩", "😫", "😭", "🥲", "😮‍💨", "🫠",
 ];
 
+// 카드 꾸미기 색상 프리셋 (파스텔 톤 — 기본적으로 검정 텍스트가 어울려요)
+export const CARD_BACKGROUND_COLORS = [
+  "#fde2e2", "#fde7c8", "#fdf3c8", "#dff5d8",
+  "#d6f0ee", "#d9e8fb", "#e6def8", "#fbdff0",
+];
+
 export const NAV = [
   { key: "stats", href: "/stats", label: "현황" },
   { key: "main", href: "/", label: "메인" },
@@ -58,10 +64,28 @@ export const TEXT = {
     noUserSelected: "먼저 위에서 사용자를 선택해주세요.",
     saveFailed: "저장하지 못했어요. PIN을 다시 확인해주세요.",
   },
+
+  cardStyle: {
+    title: "카드 꾸미기",
+    colorTab: "배경색",
+    customColor: "직접 고르기",
+    imageTab: "이미지 업로드",
+    uploading: "올리는 중이에요...",
+    tooLarge: "5MB 이하 이미지만 올릴 수 있어요.",
+    reset: "기본값으로",
+    saveFailed: "저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+  },
 } as const;
 
 /** 새 버전이 나오면 배열 맨 앞에 추가하세요. 헤더 벨 뱃지 + 모달에 자동 반영돼요. */
 export const PATCH_NOTES = [
+  {
+    version: "2.1.0",
+    date: "2026-09-22",
+    items: [
+      "카드를 꾸밀 수 있어요 — 카드의 ⋯ 메뉴나 2초 꾹 누르기로 배경색·배경 이미지를 지정해보세요.",
+    ],
+  },
   {
     version: "2.0.0",
     date: "2026-09-22",

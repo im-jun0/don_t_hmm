@@ -1,7 +1,14 @@
 import { supabase, supabaseReady } from "@/lib/supabase";
 import { TEXT } from "@/config";
 
-export type Row = { id: string; actor: string; name: string; count: number };
+export type Row = {
+  id: string;
+  actor: string;
+  name: string;
+  count: number;
+  backgroundColor: string | null;
+  backgroundImageUrl: string | null;
+};
 export type UserRow = { id: string; name: string; sortOrder: number };
 export type Snapshot = { users: string[]; userId: string | null; rows: Row[] | null };
 export type DailyCount = { day: string; count: number };
@@ -32,11 +39,19 @@ export async function fetchSnapshot(userName: string | null): Promise<Snapshot> 
 
   const { data, error } = await supabase
     .from("items")
-    .select("id, actor, name, count")
+    .select("id, actor, name, count, background_color, background_image_url")
     .eq("user_id", target.id)
     .order("sort_order", { ascending: true });
   if (error) throw error;
-  return { users: names, userId: target.id, rows: data ?? [] };
+  const rows: Row[] = (data ?? []).map((r) => ({
+    id: r.id,
+    actor: r.actor,
+    name: r.name,
+    count: r.count,
+    backgroundColor: r.background_color,
+    backgroundImageUrl: r.background_image_url,
+  }));
+  return { users: names, userId: target.id, rows };
 }
 
 /** 카운트를 1 올리고 서버가 알려주는 최종 숫자를 돌려줘요. */
@@ -53,6 +68,34 @@ export async function fetchDailyCounts(userId: string, days = 14): Promise<Daily
   const { data, error } = await supabase.rpc("daily_counts", { p_user_id: userId, p_days: days });
   if (error) throw error;
   return (data ?? []).map((d: { day: string; count: number }) => ({ day: d.day, count: Number(d.count) }));
+}
+
+/* ── 카드 꾸미기 (PIN 없음 — 카운트 클릭처럼 누구나) ── */
+
+export async function setItemStyle(
+  itemId: string,
+  style: { backgroundColor: string | null; backgroundImageUrl: string | null }
+): Promise<void> {
+  assertReady();
+  const { error } = await supabase.rpc("set_item_style", {
+    p_item_id: itemId,
+    p_background_color: style.backgroundColor,
+    p_background_image_url: style.backgroundImageUrl,
+  });
+  if (error) throw error;
+}
+
+export async function uploadItemImage(itemId: string, file: File): Promise<string> {
+  assertReady();
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${itemId}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("item-backgrounds").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from("item-backgrounds").getPublicUrl(path);
+  return data.publicUrl;
 }
 
 /* ── 항목관리 (PIN 필요) ── */

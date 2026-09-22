@@ -7,9 +7,10 @@
 --
 -- 구조
 --   users  : 사이트를 쓰는 사람 (기존 구글시트의 탭 1개)
---   items  : 사용자별 행위자/행위명/카운트 (기존 구글시트의 행 1개)
+--   items  : 사용자별 행위자/행위명/카운트 + background_color/background_image_url (카드 꾸미기, PIN 없음)
 --   events : 클릭 1번 = 1행. 현황 페이지의 일자별 추이 계산용
 --   app_config : 항목관리 PIN 저장
+--   storage.item-backgrounds : 카드 배경 이미지 업로드 버킷 (공개 읽기, 누구나 업로드)
 
 create extension if not exists "pgcrypto";
 
@@ -18,7 +19,7 @@ create table if not exists app_config (
   value text not null
 );
 
-insert into app_config (key, value) values ('admin_pin', 'CHANGE_ME_TO_A_LONG_PIN')
+insert into app_config (key, value) values ('admin_pin', '7777')
   on conflict (key) do nothing;
 
 create table if not exists users (
@@ -38,6 +39,17 @@ create table if not exists items (
   created_at timestamptz not null default now()
 );
 create index if not exists items_user_sort_idx on items(user_id, sort_order);
+
+alter table items add column if not exists background_color text;
+alter table items add column if not exists background_image_url text;
+
+alter table items drop constraint if exists items_background_color_check;
+alter table items add constraint items_background_color_check
+  check (background_color is null or background_color ~ '^#[0-9a-fA-F]{6}$');
+
+alter table items drop constraint if exists items_background_image_url_check;
+alter table items add constraint items_background_image_url_check
+  check (background_image_url is null or background_image_url ~ '^https://');
 
 create table if not exists events (
   id bigserial primary key,
@@ -109,6 +121,19 @@ as $$
     and e.created_at >= now() - (p_days || ' days')::interval
   group by 1
   order by 1;
+$$;
+
+-- ── 카드 꾸미기 (배경색/배경이미지, PIN 없음 — 카운트 클릭처럼 누구나) ──
+create or replace function set_item_style(p_item_id uuid, p_background_color text, p_background_image_url text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update items set background_color = p_background_color, background_image_url = p_background_image_url
+    where id = p_item_id;
+end;
 $$;
 
 -- ── 항목관리: 사용자 ──
@@ -205,9 +230,23 @@ grant select on users, items to anon;
 grant execute on function
   increment_item(uuid),
   daily_counts(uuid, int),
+  set_item_style(uuid, text, text),
   admin_verify_pin(text),
   admin_upsert_user(text, uuid, text, int),
   admin_delete_user(text, uuid),
   admin_upsert_item(text, uuid, uuid, text, text, int, int),
   admin_delete_item(text, uuid)
 to anon;
+
+-- ── 이미지 업로드용 Storage 버킷 (배경 이미지) ──
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('item-backgrounds', 'item-backgrounds', true, 5242880, array['image/png','image/jpeg','image/webp','image/gif'])
+on conflict (id) do nothing;
+
+drop policy if exists "item-backgrounds public read" on storage.objects;
+create policy "item-backgrounds public read" on storage.objects
+  for select using (bucket_id = 'item-backgrounds');
+
+drop policy if exists "item-backgrounds public upload" on storage.objects;
+create policy "item-backgrounds public upload" on storage.objects
+  for insert with check (bucket_id = 'item-backgrounds');

@@ -4,11 +4,131 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EMOJIS, POLL_MS, TEXT } from "@/config";
 import { fetchSnapshot, incrementItem, type Row } from "@/lib/api";
 import { useSelectedUser } from "@/lib/useSelectedUser";
+import { readableTextColor } from "@/lib/color";
 import HmmFace from "@/components/HmmFace";
+import CardStyleEditor from "@/components/CardStyleEditor";
 
 const POPUP_MS = 900; // globals.css 의 .hc-pop 지속 시간과 같게
+const LONG_PRESS_MS = 2000;
 
 type Pop = { key: number; emoji: string; x: number; y: number };
+
+/** 카드 하나. 롱프레스마다 독립된 타이머가 필요해서 .map() 밖으로 뺀 하위 컴포넌트예요. */
+function ItemCard({
+  row,
+  onIncrement,
+  onOpenStyle,
+}: {
+  row: Row;
+  onIncrement: (row: Row, el: HTMLElement) => void;
+  onOpenStyle: (row: Row) => void;
+}) {
+  const pressTimer = useRef<number | null>(null);
+  const suppressClick = useRef(false);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+
+  const cancelPress = () => {
+    if (pressTimer.current !== null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    startPos.current = null;
+  };
+
+  const startPress = (x: number, y: number) => {
+    cancelPress();
+    startPos.current = { x, y };
+    pressTimer.current = window.setTimeout(() => {
+      suppressClick.current = true;
+      onOpenStyle(row);
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return; // 우클릭 등은 무시
+    startPress(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!startPos.current) return;
+    const dx = e.clientX - startPos.current.x;
+    const dy = e.clientY - startPos.current.y;
+    if (Math.hypot(dx, dy) > 10) cancelPress(); // 스크롤/드래그로 판단되면 롱프레스 취소
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    cancelPress();
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    onIncrement(row, e.currentTarget);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onIncrement(row, e.currentTarget);
+    }
+  };
+
+  const hasCustomStyle = Boolean(row.backgroundColor || row.backgroundImageUrl);
+  const cardStyle: React.CSSProperties = row.backgroundImageUrl
+    ? {
+        backgroundImage: `linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.55)), url(${row.backgroundImageUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        color: "#fff",
+        borderColor: "transparent",
+      }
+    : row.backgroundColor
+      ? {
+          backgroundColor: row.backgroundColor,
+          color: readableTextColor(row.backgroundColor),
+          borderColor: "transparent",
+        }
+      : {};
+  const badgeClass = hasCustomStyle
+    ? "rounded-full bg-black/15 px-2.5 py-0.5 text-xs font-medium"
+    : "rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-600";
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onPointerLeave={cancelPress}
+      style={cardStyle}
+      className="relative flex min-h-[148px] cursor-pointer flex-col justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-neutral-300 active:scale-[0.97] active:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+    >
+      <button
+        type="button"
+        aria-label="카드 꾸미기"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenStyle(row);
+        }}
+        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/10 text-sm hover:bg-black/20"
+      >
+        ⋯
+      </button>
+
+      <span className="flex flex-col items-start gap-2">
+        <span className={badgeClass}>{row.actor}</span>
+        <span className="break-keep text-[15px] font-medium leading-snug">{row.name}</span>
+      </span>
+      <span className="text-4xl font-semibold tabular-nums tracking-tight">
+        {row.count.toLocaleString()}
+      </span>
+    </div>
+  );
+}
 
 export default function HabitCounter() {
   const { user } = useSelectedUser();
@@ -18,6 +138,7 @@ export default function HabitCounter() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [pops, setPops] = useState<Pop[]>([]);
+  const [editingRow, setEditingRow] = useState<Row | null>(null);
   const pending = useRef(0); // 저장 중인 클릭 수 (폴링이 낙관적 숫자를 덮어쓰지 않게)
   const popKey = useRef(0);
   const userRef = useRef<string | null>(null);
@@ -84,6 +205,9 @@ export default function HabitCounter() {
   const bump = (id: string, fn: (n: number) => number) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, count: fn(r.count) } : r)));
 
+  const applyStyle = (id: string, patch: { backgroundColor: string | null; backgroundImageUrl: string | null }) =>
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
   const increment = async (row: Row, el: HTMLElement) => {
     if (!current) return;
     spawnPop(el);
@@ -147,24 +271,7 @@ export default function HabitCounter() {
               </div>
               <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:gap-4">
                 {items.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    onClick={(e) => increment(row, e.currentTarget)}
-                    className="flex min-h-[148px] flex-col justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-neutral-300 active:scale-[0.97] active:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-                  >
-                    <span className="flex flex-col items-start gap-2">
-                      <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-600">
-                        {row.actor}
-                      </span>
-                      <span className="break-keep text-[15px] font-medium leading-snug">
-                        {row.name}
-                      </span>
-                    </span>
-                    <span className="text-4xl font-semibold tabular-nums tracking-tight">
-                      {row.count.toLocaleString()}
-                    </span>
-                  </button>
+                  <ItemCard key={row.id} row={row} onIncrement={increment} onOpenStyle={setEditingRow} />
                 ))}
               </div>
             </section>
@@ -183,6 +290,17 @@ export default function HabitCounter() {
           {p.emoji}
         </span>
       ))}
+
+      {editingRow && (
+        <CardStyleEditor
+          row={editingRow}
+          onClose={() => setEditingRow(null)}
+          onChange={(patch) => {
+            applyStyle(editingRow.id, patch);
+            setEditingRow((r) => (r ? { ...r, ...patch } : r));
+          }}
+        />
+      )}
     </main>
   );
 }
