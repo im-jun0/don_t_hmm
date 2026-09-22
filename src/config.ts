@@ -17,15 +17,29 @@ export const CARD_BACKGROUND_COLORS = [
 ];
 
 export const NAV = [
-  { key: "stats", href: "/stats", label: "현황" },
-  { key: "ranking", href: "/ranking", label: "랭킹" },
   { key: "main", href: "/", label: "메인" },
   { key: "game", href: "/game", label: "게임" },
+  { key: "stats", href: "/stats", label: "현황" },
+  { key: "ranking", href: "/ranking", label: "랭킹" },
   { key: "manage", href: "/manage", label: "관리" },
 ] as const;
 
 /** 랭킹 탑 몇 등까지 빵빠레를 울릴지 */
 export const FANFARE_RANK = 3;
+
+/**
+ * 위장 테마에서 내 항목에 붙일 가짜 앱 이름. 항목 순서대로 하나씩 가져다 써요.
+ *
+ * ⚠️ DisguiseIcons 의 들러리 앱 이름과 절대 겹치면 안 돼요.
+ * 한 화면에 "메모"가 두 개 있으면 진짜 아이폰에는 없는 일이라 바로 들통나요.
+ * 여기에 이름을 추가할 땐 DECOY_APPS 의 label 과 안 겹치는지 확인해주세요.
+ */
+export const DISGUISE_APP_NAMES = [
+  "주식", "나침반", "측정", "단축어", "팁", "음성 메모",
+  "번역", "돋보기", "책", "홈", "연락처", "FaceTime",
+  "TV", "피트니스", "프리폼", "저널", "뉴스", "찾기",
+  "Watch", "날씨 위젯",
+];
 
 /** 미니게임 설정. 시작 시각은 매일 windowStartHour~windowEndHour(KST) 사이에서 랜덤으로 뽑혀요. */
 export const GAME = {
@@ -75,6 +89,12 @@ export const TEXT = {
   login: {
     title: "Don't Hmm",
     subtitle: ["당신의 동료는 지금 몇 번이나", "아무 의미 없이 소리를 냈을까요?"],
+  },
+
+  disguise: {
+    toggleLabel: "테마 변경",
+    exitLabel: "설정",
+    empty: "등록된 앱이 없어요.",
   },
 
   ranking: {
@@ -163,6 +183,15 @@ export const TEXT = {
 
 /** 새 버전이 나오면 배열 맨 앞에 추가하세요. 헤더 벨 뱃지 + 모달에 자동 반영돼요. */
 export const PATCH_NOTES = [
+  {
+    version: "2.5.0",
+    date: "2026-09-23",
+    items: [
+      "위장 테마가 생겼어요 — 헤더의 반달 버튼을 누르면 평범한 홈 화면처럼 보여요.",
+      "등록한 이미지가 그대로 앱 아이콘이 되고, 카운트는 빨간 뱃지로 나와요. 눌러도 이모지가 안 튀어요.",
+      "독 맨 오른쪽 설정을 누르면 원래 화면으로 돌아와요. 폰에서만 동작해요.",
+    ],
+  },
   {
     version: "2.4.1",
     date: "2026-09-23",
