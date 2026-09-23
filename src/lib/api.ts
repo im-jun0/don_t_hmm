@@ -11,6 +11,7 @@ export type Row = {
   totalCount: number;
   backgroundColor: string | null;
   backgroundImageUrl: string | null;
+  sortOrder: number;
 };
 export type UserRow = { id: string; name: string; sortOrder: number };
 export type Snapshot = { users: string[]; userId: string | null; rows: Row[] | null };
@@ -52,6 +53,7 @@ export async function fetchSnapshot(userName: string | null): Promise<Snapshot> 
       total_count: number;
       background_color: string | null;
       background_image_url: string | null;
+      sort_order: number;
     }) => ({
       id: r.id,
       actor: r.actor,
@@ -60,6 +62,7 @@ export async function fetchSnapshot(userName: string | null): Promise<Snapshot> 
       totalCount: r.total_count,
       backgroundColor: r.background_color,
       backgroundImageUrl: r.background_image_url,
+      sortOrder: r.sort_order,
     })
   );
   return { users: names, userId: target.id, rows };

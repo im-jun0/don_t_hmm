@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { TEXT } from "@/config";
 import AppShell from "@/components/AppShell";
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body>
         <AppShell>{children}</AppShell>
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );

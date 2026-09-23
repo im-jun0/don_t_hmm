@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { TEXT } from "@/config";
 import { addMyItem } from "@/lib/api";
 
@@ -18,11 +19,22 @@ export default function AddItemModal({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const actorInputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const submit = async () => {
     const trimmedActor = actorName.trim();
     const trimmedName = name.trim();
-    if (!trimmedActor || !trimmedName) return;
+    if (!trimmedActor) {
+      toast.error(TEXT.manage.actorRequired);
+      actorInputRef.current?.focus();
+      return;
+    }
+    if (!trimmedName) {
+      toast.error(TEXT.manage.nameRequired);
+      nameInputRef.current?.focus();
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -63,12 +75,14 @@ export default function AddItemModal({
           className="mt-4 flex flex-col gap-2"
         >
           <input
+            ref={actorInputRef}
             value={actorName}
             onChange={(e) => setActorName(e.target.value)}
             placeholder={TEXT.manage.actorPlaceholder}
             className="rounded-xl border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
           />
           <input
+            ref={nameInputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={TEXT.manage.namePlaceholder}

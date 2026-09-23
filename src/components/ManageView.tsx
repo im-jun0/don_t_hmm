@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { TEXT } from "@/config";
 import {
   deleteItem,
@@ -125,6 +126,9 @@ export default function ManageView() {
   const [newItem, setNewItem] = useState({ actor: "", name: "" });
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const newUserNameRef = useRef<HTMLInputElement>(null);
+  const newItemActorRef = useRef<HTMLInputElement>(null);
+  const newItemNameRef = useRef<HTMLInputElement>(null);
 
   const reloadUsers = useCallback(() => fetchUsers().then(setUsers).catch(() => {}), []);
   const reloadItems = useCallback(async (target: string | null) => {
@@ -210,14 +214,19 @@ export default function ManageView() {
   };
 
   /* ── 사용자 ── */
-  const addUser = () =>
-    withPin(async () => {
-      const name = newUserName.trim();
-      if (!name) return;
+  const addUser = () => {
+    const name = newUserName.trim();
+    if (!name) {
+      toast.error(TEXT.manage.userNameRequired);
+      newUserNameRef.current?.focus();
+      return;
+    }
+    return withPin(async () => {
       await upsertUser(pin, { id: null, name, sortOrder: users.length });
       setNewUserName("");
       await reloadUsers();
     });
+  };
 
   const renameUser = (u: UserRow, name: string) =>
     withPin(async () => {
@@ -234,27 +243,40 @@ export default function ManageView() {
     });
 
   /* ── 항목 ── */
-  const addItem = () =>
-    withPin(async () => {
-      if (!userId) return;
-      const actor = newItem.actor.trim();
-      const name = newItem.name.trim();
-      if (!actor || !name) return;
+  const addItem = () => {
+    if (!userId) return;
+    const actor = newItem.actor.trim();
+    const name = newItem.name.trim();
+    if (!actor) {
+      toast.error(TEXT.manage.actorRequired);
+      newItemActorRef.current?.focus();
+      return;
+    }
+    if (!name) {
+      toast.error(TEXT.manage.nameRequired);
+      newItemNameRef.current?.focus();
+      return;
+    }
+    return withPin(async () => {
       await upsertItem(pin, { id: null, userId, actor, name, count: 0, sortOrder: items.length });
       setNewItem({ actor: "", name: "" });
       await reloadItems(user);
     });
+  };
 
   const saveItem = (row: Row, patch: Partial<{ actor: string; name: string; count: number }>) =>
     withPin(async () => {
       if (!userId) return;
+      const actor = (patch.actor ?? row.actor).trim();
+      const name = (patch.name ?? row.name).trim();
+      if (!actor || !name) return;
       await upsertItem(pin, {
         id: row.id,
         userId,
-        actor: patch.actor ?? row.actor,
-        name: patch.name ?? row.name,
+        actor,
+        name,
         count: patch.count ?? row.count,
-        sortOrder: 0,
+        sortOrder: row.sortOrder,
       });
       await reloadItems(user);
     });
@@ -332,6 +354,7 @@ export default function ManageView() {
           className="mt-3 flex gap-2"
         >
           <input
+            ref={newUserNameRef}
             value={newUserName}
             onChange={(e) => setNewUserName(e.target.value)}
             placeholder={TEXT.manage.userNamePlaceholder}
@@ -391,12 +414,14 @@ export default function ManageView() {
               className="mt-3 flex flex-wrap gap-2"
             >
               <input
+                ref={newItemActorRef}
                 value={newItem.actor}
                 onChange={(e) => setNewItem((v) => ({ ...v, actor: e.target.value }))}
                 placeholder={TEXT.manage.actorPlaceholder}
                 className="w-28 rounded-xl border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
               />
               <input
+                ref={newItemNameRef}
                 value={newItem.name}
                 onChange={(e) => setNewItem((v) => ({ ...v, name: e.target.value }))}
                 placeholder={TEXT.manage.namePlaceholder}

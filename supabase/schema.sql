@@ -12,7 +12,7 @@
 --   item_daily_counts : 항목별 x 날짜별 카운트. 카드에 보이는 "오늘" 숫자를 여기서 읽어요
 --   app_config : 항목관리 PIN 저장
 --   users.auth_user_id : 카카오(Supabase Auth) 계정 1개 = 사용자 1명 연결
---   storage.item-backgrounds : 카드 배경 이미지 업로드 버킷 (공개 읽기, 누구나 업로드)
+--   storage.item-backgrounds : 카드 배경 이미지 업로드 버킷 (공개 읽기, 업로드는 본인 항목만)
 
 create extension if not exists "pgcrypto";
 
@@ -87,6 +87,21 @@ begin
 end;
 $$;
 
+-- ── 필수 입력값 검증 헬퍼 (anon 에게 execute 부여 안 함) ──
+-- 사용자/행위자/행위명처럼 비워둘 수 없는 text 컬럼에 붙여요. null 이거나 공백뿐이면 막아요.
+create or replace function require_text_(p_val text, p_field text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_val is null or btrim(p_val) = '' then
+    raise exception '% is required', p_field;
+  end if;
+end;
+$$;
+
 -- ── 날짜별 카운트 이력 ──
 -- 카드에 보이는 숫자는 "오늘" 눌린 횟수예요. 자정이 지나면 그날 행이 없으니 저절로 0 이 돼요.
 -- 그래서 자정에 뭔가를 지우는 스케줄러가 필요 없어요. 안 도는 크론이 제일 무서우니까요.
@@ -114,6 +129,7 @@ on conflict (item_id, day) do nothing;
 
 -- ── 카운트 증가 ──
 -- 누적(items.count)과 오늘치(item_daily_counts)를 같이 올리고, 카드에 보여줄 오늘치를 돌려줘요.
+-- 본인 항목만 누를 수 있어요 (다른 사람 페이지의 카드는 눌러도 안 올라가요).
 create or replace function increment_item(p_item_id uuid)
 returns int
 language plpgsql
@@ -124,9 +140,11 @@ declare
   today date := (now() at time zone 'Asia/Seoul')::date;
   today_count int;
 begin
-  update items set count = count + 1 where id = p_item_id;
+  update items set count = count + 1
+    where id = p_item_id
+      and user_id = (select id from users where auth_user_id = auth.uid());
   if not found then
-    raise exception 'item not found';
+    raise exception 'not allowed';
   end if;
 
   insert into item_daily_counts (item_id, day, count)
@@ -157,7 +175,7 @@ as $$
   order by 1;
 $$;
 
--- ── 카드 꾸미기 (배경색/배경이미지, PIN 없음 — 카운트 클릭처럼 누구나) ──
+-- ── 카드 꾸미기 (배경색/배경이미지). 본인 항목만 바꿀 수 있어요 ──
 create or replace function set_item_style(p_item_id uuid, p_background_color text, p_background_image_url text)
 returns void
 language plpgsql
@@ -166,7 +184,11 @@ set search_path = public
 as $$
 begin
   update items set background_color = p_background_color, background_image_url = p_background_image_url
-    where id = p_item_id;
+    where id = p_item_id
+      and user_id = (select id from users where auth_user_id = auth.uid());
+  if not found then
+    raise exception 'not allowed';
+  end if;
 end;
 $$;
 
@@ -195,6 +217,7 @@ declare
   new_id uuid;
 begin
   perform check_pin_(p_pin);
+  perform require_text_(p_name, 'name');
   if p_id is null then
     insert into users (name, sort_order) values (p_name, p_sort_order)
       returning id into new_id;
@@ -232,6 +255,8 @@ declare
   new_id uuid;
 begin
   perform check_pin_(p_pin);
+  perform require_text_(p_actor, 'actor');
+  perform require_text_(p_name, 'name');
   if p_id is null then
     insert into items (user_id, actor, name, count, sort_order)
       values (p_user_id, p_actor, p_name, coalesce(p_count, 0), p_sort_order)
@@ -263,9 +288,7 @@ $$;
 grant usage on schema public to anon, authenticated;
 grant select on users, items to anon, authenticated;
 grant execute on function
-  increment_item(uuid),
   daily_counts(uuid, int),
-  set_item_style(uuid, text, text),
   admin_verify_pin(text),
   admin_upsert_user(text, uuid, text, int),
   admin_delete_user(text, uuid),
@@ -282,9 +305,21 @@ drop policy if exists "item-backgrounds public read" on storage.objects;
 create policy "item-backgrounds public read" on storage.objects
   for select using (bucket_id = 'item-backgrounds');
 
+-- 업로드 경로는 uploadItemImage() 가 `<itemId>/<uuid>.<ext>` 로 만들어요.
+-- 그 itemId 가 내 항목일 때만 올릴 수 있게, 경로 첫 폴더를 items 소유자와 대조해요.
 drop policy if exists "item-backgrounds public upload" on storage.objects;
-create policy "item-backgrounds public upload" on storage.objects
-  for insert with check (bucket_id = 'item-backgrounds');
+drop policy if exists "item-backgrounds owner upload" on storage.objects;
+create policy "item-backgrounds owner upload" on storage.objects
+  for insert
+  with check (
+    bucket_id = 'item-backgrounds'
+    and exists (
+      select 1 from items i
+      join users u on u.id = i.user_id
+      where u.auth_user_id = auth.uid()
+        and i.id::text = (storage.foldername(name))[1]
+    )
+  );
 
 -- ── 카카오 로그인 (Supabase Auth) ──
 -- Supabase 대시보드 > Authentication > Providers > Kakao 를 켠 뒤에 이 부분을 실행하세요.
@@ -353,6 +388,7 @@ begin
   if auth.uid() is null then
     raise exception 'not signed in';
   end if;
+  perform require_text_(p_name, 'name');
   if exists (select 1 from users where auth_user_id = auth.uid()) then
     raise exception 'already linked';
   end if;
@@ -378,6 +414,8 @@ begin
   if my_id is null then
     raise exception 'not linked';
   end if;
+  perform require_text_(p_actor, 'actor');
+  perform require_text_(p_name, 'name');
   insert into items (user_id, actor, name, sort_order)
     values (my_id, p_actor, p_name, coalesce((select max(sort_order) from items where user_id = my_id), -1) + 1)
     returning id into new_id;
@@ -417,6 +455,8 @@ begin
   if my_id is null then
     raise exception 'not linked';
   end if;
+  perform require_text_(p_actor, 'actor');
+  perform require_text_(p_name, 'name');
   update items set actor = p_actor, name = p_name
     where id = p_item_id and user_id = my_id;
 end;
@@ -429,7 +469,9 @@ grant execute on function
   create_my_user(text),
   add_my_item(text, text),
   delete_my_item(uuid),
-  update_my_item(uuid, text, text)
+  update_my_item(uuid, text, text),
+  increment_item(uuid),
+  set_item_style(uuid, text, text)
 to authenticated;
 
 -- ── 미니게임: Don't Hmm 30초 ──
@@ -646,7 +688,8 @@ returns table (
   today_count int,
   total_count int,
   background_color text,
-  background_image_url text
+  background_image_url text,
+  sort_order int
 )
 language sql
 stable
@@ -659,13 +702,16 @@ as $$
          coalesce(d.count, 0)::int,
          i.count,
          i.background_color,
-         i.background_image_url
+         i.background_image_url,
+         i.sort_order
     from items i
     left join item_daily_counts d
       on d.item_id = i.id
      and d.day = (now() at time zone 'Asia/Seoul')::date
    where i.user_id = p_user_id
-   order by i.sort_order;
+   -- sort_order 나 created_at 이 같은 항목이 있으면 순서가 조회할 때마다 흔들릴 수 있어서
+   -- 유일한 id 로 마지막까지 확정해요. (행위자 묶기는 이 순서를 그대로 따라가요.)
+   order by i.sort_order, i.created_at, i.id;
 $$;
 
 grant execute on function items_with_counts(uuid) to anon, authenticated;

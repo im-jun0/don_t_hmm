@@ -86,11 +86,14 @@ type Pop = { key: number; emoji: string; x: number; y: number };
 function ItemCard({
   row,
   sizing,
+  isMine,
   onIncrement,
   onOpenStyle,
 }: {
   row: Row;
   sizing: ReturnType<typeof gridSizing>;
+  /** 남의 페이지에서는 카운트도, 카드 꾸미기도 손댈 수 없어요 (서버도 같은 걸 막아요). */
+  isMine: boolean;
   onIncrement: (row: Row, el: HTMLElement) => void;
   onOpenStyle: (row: Row) => void;
 }) {
@@ -116,6 +119,7 @@ function ItemCard({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMine) return;
     if (e.pointerType === "mouse" && e.button !== 0) return; // 우클릭 등은 무시
     startPress(e.clientX, e.clientY);
   };
@@ -129,6 +133,7 @@ function ItemCard({
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     cancelPress();
+    if (!isMine) return;
     if (suppressClick.current) {
       suppressClick.current = false;
       return;
@@ -137,6 +142,7 @@ function ItemCard({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isMine) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       onIncrement(row, e.currentTarget);
@@ -161,8 +167,8 @@ function ItemCard({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role={isMine ? "button" : undefined}
+      tabIndex={isMine ? 0 : undefined}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
@@ -172,25 +178,30 @@ function ItemCard({
       onPointerLeave={cancelPress}
       style={cardStyle}
       className={
-        "relative flex cursor-pointer flex-col justify-between gap-2 overflow-hidden rounded-2xl border border-neutral-200 bg-white text-left transition hover:border-neutral-300 active:scale-[0.97] active:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 sm:gap-3 " +
+        "relative flex flex-col justify-between gap-2 overflow-hidden rounded-2xl border border-neutral-200 bg-white text-left transition sm:gap-3 " +
+        (isMine
+          ? "cursor-pointer hover:border-neutral-300 active:scale-[0.97] active:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 "
+          : "") +
         `${sizing.pad} ${sizing.minHeight}`
       }
     >
-      <button
-        type="button"
-        aria-label="카드 꾸미기"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenStyle(row);
-        }}
-        className={
-          "absolute right-2 top-2 h-8 w-8 items-center justify-center rounded-full bg-black/10 text-sm hover:bg-black/20 " +
-          (sizing.tight ? "hidden sm:flex" : "flex")
-        }
-      >
-        ⋯
-      </button>
+      {isMine && (
+        <button
+          type="button"
+          aria-label="카드 꾸미기"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenStyle(row);
+          }}
+          className={
+            "absolute right-2 top-2 h-8 w-8 items-center justify-center rounded-full bg-black/10 text-sm hover:bg-black/20 " +
+            (sizing.tight ? "hidden sm:flex" : "flex")
+          }
+        >
+          ⋯
+        </button>
+      )}
 
       {/* 행위자 이름은 바로 위 섹션 제목에 있어서 카드 안에는 안 넣어요. */}
       <span className={`min-w-0 font-medium ${sizing.nameClass}`}>{row.name}</span>
@@ -290,19 +301,23 @@ export default function HabitCounter() {
   const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.id !== id));
 
   const increment = async (row: Row, el: HTMLElement) => {
-    if (!current) return;
+    if (!current || !isMine) return; // 서버도 같은 걸 막지만, UI 에서도 한 번 더 막아요.
     spawnPop(el);
     bump(row.id, (n) => n + 1);
 
     pending.current++;
     try {
       const serverCount = await incrementItem(row.id);
-      bump(row.id, () => serverCount); // 동시에 누른 다른 사람 몫까지 반영된 최종 숫자
+      // 연속 탭이면 이 요청들의 응답이 보낸 순서대로 안 올 수 있어요. 낮은 값으로 먼저 도착한
+      // 응답이 나중에 도착한 높은 값을 덮어쓰지 않게 max 로 합쳐요 (동시에 누른 다른 사람 몫도 포함된 값이에요).
+      bump(row.id, (n) => Math.max(n, serverCount));
     } catch {
       bump(row.id, (n) => n - 1); // 실패하면 되돌리기
     } finally {
+      // 클릭했을 땐 그 항목의 카운트만 바꿔요. 전체를 다시 불러오면(순서·다른 항목 값이
+      // 매번 새로 온 배열로 통째로 교체되면서) 화면이 흔들릴 수 있어서, 나머지 동기화는
+      // 다음 폴링 주기(POLL_MS)에 맡겨요.
       pending.current--;
-      if (pending.current === 0) load(userRef.current);
     }
   };
 
@@ -380,6 +395,7 @@ export default function HabitCounter() {
                       key={row.id}
                       row={row}
                       sizing={sizing}
+                      isMine={isMine}
                       onIncrement={increment}
                       onOpenStyle={setEditingRow}
                     />
