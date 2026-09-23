@@ -248,7 +248,9 @@ export default function HabitCounter() {
 
   /* ── 파생 데이터 ── */
   const current = user && users.includes(user) ? user : null;
-  const isMine = authStatus === "ready" && me?.name === current; // 공유 링크로 남의 페이지를 볼 때는 false
+  // 로컬 개발 중엔 카카오 로그인 계정과 테스트하려는 사용자가 다를 때가 많아서 구분 자체를 꺼요.
+  const isMine =
+    process.env.NODE_ENV !== "production" || (authStatus === "ready" && me?.name === current); // 공유 링크로 남의 페이지를 볼 때는 false
   const myRows = useMemo(() => (rowsFor === current ? rows : []), [rows, rowsFor, current]);
   const rowsReady = current !== null && rowsFor === current;
   const total = myRows.reduce((sum, r) => sum + r.count, 0);
@@ -325,9 +327,18 @@ export default function HabitCounter() {
           {rowsReady && <p className="mt-2 text-neutral-500">{TEXT.totalSuffix(total)}</p>}
 
           {rowsReady && groups.length === 0 && (
-            <p className="mt-10 rounded-2xl bg-neutral-50 px-5 py-4 text-sm text-neutral-600">
-              {TEXT.emptyUser}
-            </p>
+            <div className="mt-10 rounded-2xl bg-neutral-50 px-5 py-4 text-sm text-neutral-600">
+              <p>{isMine ? TEXT.emptyUserMine : TEXT.emptyUser}</p>
+              {isMine && (
+                <button
+                  type="button"
+                  onClick={() => setAddingActor("")}
+                  className="mt-3 rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition active:scale-95"
+                >
+                  {TEXT.addItem.title}
+                </button>
+              )}
+            </div>
           )}
 
           {groups.map(([actor, items]) => {
@@ -398,7 +409,7 @@ export default function HabitCounter() {
         />
       )}
 
-      {addingActor && (
+      {addingActor !== null && (
         <AddItemModal
           actor={addingActor}
           onClose={() => setAddingActor(null)}

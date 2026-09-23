@@ -70,6 +70,7 @@ export const TEXT = {
   totalSuffix: (n: number) => `오늘 ${n.toLocaleString()}번 참았습니다.`,
   loading: "불러오는 중이에요.",
   emptyUser: "등록된 행동이 아직 없어요. 항목관리에서 추가해보세요.",
+  emptyUserMine: "아직 등록된 행동이 없어요. 첫 항목을 직접 만들어보세요.",
   emptyAll: "사용자가 아직 없어요. 항목관리에서 추가해보세요.",
   errorNoUrl:
     "DB 연결이 설정되지 않았어요. NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY 환경변수를 확인해주세요.",
