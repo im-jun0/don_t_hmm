@@ -8,6 +8,7 @@ import { useSelectedUser } from "@/lib/useSelectedUser";
 import { readableTextColor } from "@/lib/color";
 import HmmFace from "@/components/HmmFace";
 import CardStyleEditor from "@/components/CardStyleEditor";
+import AddItemModal from "@/components/AddItemModal";
 import LinkUser from "@/components/LinkUser";
 
 const POPUP_MS = 900; // globals.css 의 .hc-pop 지속 시간과 같게
@@ -202,7 +203,7 @@ function ItemCard({
 
 export default function HabitCounter() {
   const { user } = useSelectedUser();
-  const { status: authStatus, displayName } = useAuth();
+  const { status: authStatus, me, displayName } = useAuth();
   const [users, setUsers] = useState<string[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [rowsFor, setRowsFor] = useState<string | null>(null); // rows 가 누구 것인지
@@ -210,6 +211,7 @@ export default function HabitCounter() {
   const [errorMsg, setErrorMsg] = useState("");
   const [pops, setPops] = useState<Pop[]>([]);
   const [editingRow, setEditingRow] = useState<Row | null>(null);
+  const [addingActor, setAddingActor] = useState<string | null>(null);
   const pending = useRef(0); // 저장 중인 클릭 수 (폴링이 낙관적 숫자를 덮어쓰지 않게)
   const popKey = useRef(0);
   const userRef = useRef<string | null>(null);
@@ -246,6 +248,7 @@ export default function HabitCounter() {
 
   /* ── 파생 데이터 ── */
   const current = user && users.includes(user) ? user : null;
+  const isMine = authStatus === "ready" && me?.name === current; // 공유 링크로 남의 페이지를 볼 때는 false
   const myRows = useMemo(() => (rowsFor === current ? rows : []), [rows, rowsFor, current]);
   const rowsReady = current !== null && rowsFor === current;
   const total = myRows.reduce((sum, r) => sum + r.count, 0);
@@ -332,7 +335,19 @@ export default function HabitCounter() {
             return (
               <section key={actor} className="mt-10">
                 <div className="flex items-baseline justify-between">
-                  <h2 className="text-xl font-semibold tracking-tight">{actor}</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-semibold tracking-tight">{actor}</h2>
+                    {isMine && (
+                      <button
+                        type="button"
+                        aria-label="항목 추가"
+                        onClick={() => setAddingActor(actor)}
+                        className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-100 text-sm font-medium text-neutral-500 hover:bg-neutral-200"
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
                   <span className="text-sm tabular-nums text-neutral-400">
                     {items.reduce((s, r) => s + r.count, 0).toLocaleString()}
                   </span>
@@ -379,6 +394,17 @@ export default function HabitCounter() {
           onChange={(patch) => {
             applyStyle(editingRow.id, patch);
             setEditingRow((r) => (r ? { ...r, ...patch } : r));
+          }}
+        />
+      )}
+
+      {addingActor && (
+        <AddItemModal
+          actor={addingActor}
+          onClose={() => setAddingActor(null)}
+          onAdded={() => {
+            setAddingActor(null);
+            load(userRef.current);
           }}
         />
       )}

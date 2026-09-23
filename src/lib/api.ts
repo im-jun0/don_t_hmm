@@ -207,6 +207,14 @@ export async function createMyUser(name: string): Promise<void> {
   if (error) throw error;
 }
 
+/** 로그인한 내 페이지에서 PIN 없이 바로 항목을 추가해요 (내 계정으로만). */
+export async function addMyItem(actor: string, name: string): Promise<string> {
+  assertReady();
+  const { data, error } = await supabase.rpc("add_my_item", { p_actor: actor, p_name: name });
+  if (error) throw error;
+  return data as string;
+}
+
 const KAKAO_AUTHORIZE_URL = "https://kauth.kakao.com/oauth/authorize";
 const KAKAO_STATE_KEY = "donthmm:kakao_state";
 

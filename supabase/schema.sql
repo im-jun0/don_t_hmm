@@ -363,11 +363,34 @@ begin
 end;
 $$;
 
+-- 로그인한 내 페이지의 + 버튼: 내 계정으로만, PIN 없이 바로 항목 추가
+create or replace function add_my_item(p_actor text, p_name text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  my_id uuid;
+  new_id uuid;
+begin
+  select id into my_id from users where auth_user_id = auth.uid();
+  if my_id is null then
+    raise exception 'not linked';
+  end if;
+  insert into items (user_id, actor, name, sort_order)
+    values (my_id, p_actor, p_name, coalesce((select max(sort_order) from items where user_id = my_id), -1) + 1)
+    returning id into new_id;
+  return new_id;
+end;
+$$;
+
 grant execute on function
   my_user(),
   unlinked_users(),
   claim_user(uuid),
-  create_my_user(text)
+  create_my_user(text),
+  add_my_item(text, text)
 to authenticated;
 
 -- ── 미니게임: Don't Hmm 30초 ──

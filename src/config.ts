@@ -181,6 +181,12 @@ export const TEXT = {
     reset: "기본값으로",
     saveFailed: "저장하지 못했어요. 잠시 후 다시 시도해주세요.",
   },
+
+  addItem: {
+    title: "항목 추가",
+    save: "추가",
+    saveFailed: "추가하지 못했어요. 잠시 후 다시 시도해주세요.",
+  },
 } as const;
 
 /** 새 버전이 나오면 배열 맨 앞에 추가하세요. 헤더 벨 뱃지 + 모달에 자동 반영돼요. */
