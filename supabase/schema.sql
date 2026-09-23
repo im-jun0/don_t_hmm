@@ -609,25 +609,48 @@ $$;
 grant execute on function items_with_counts(uuid) to anon, authenticated;
 
 -- ── 오늘 다 같이 얼마나 눌렀나 (현황 페이지) ──
--- 사용자마다 오늘치 합계를 돌려줘요. 많이 누른 사람이 위로 와요.
--- 항목이 하나도 없는 사람도 0 으로 나와요 (left join).
-create or replace function today_by_user()
-returns table (name text, count int, is_me boolean)
+-- 항목(카드) 단위로 오늘치를 돌려줘요. 미니 카드가 이미지/카운트/항목명을 그대로 보여줄 수 있게요.
+-- 사용자는 오늘 합계가 많은 순, 그 안에서는 항목 등록 순이에요.
+create or replace function today_items()
+returns table (
+  item_id uuid,
+  actor text,
+  name text,
+  count int,
+  background_color text,
+  background_image_url text,
+  user_name text,
+  is_me boolean
+)
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select u.name,
-         coalesce(sum(d.count), 0)::int as count,
-         u.auth_user_id = auth.uid() as is_me
-    from users u
-    left join items i on i.user_id = u.id
+  with totals as (
+    select u.id, u.name, u.sort_order, u.auth_user_id,
+           coalesce(sum(d.count), 0) as total
+      from users u
+      left join items i on i.user_id = u.id
+      left join item_daily_counts d
+        on d.item_id = i.id
+       and d.day = (now() at time zone 'Asia/Seoul')::date
+     group by u.id, u.name, u.sort_order, u.auth_user_id
+  )
+  select i.id,
+         i.actor,
+         i.name,
+         coalesce(d.count, 0)::int,
+         i.background_color,
+         i.background_image_url,
+         t.name,
+         t.auth_user_id = auth.uid()
+    from totals t
+    join items i on i.user_id = t.id
     left join item_daily_counts d
       on d.item_id = i.id
      and d.day = (now() at time zone 'Asia/Seoul')::date
-   group by u.id, u.name, u.auth_user_id, u.sort_order
-   order by coalesce(sum(d.count), 0) desc, u.sort_order;
+   order by t.total desc, t.sort_order, i.sort_order;
 $$;
 
-grant execute on function today_by_user() to anon, authenticated;
+grant execute on function today_items() to anon, authenticated;

@@ -331,16 +331,43 @@ export async function fetchGameLeaderboard(days: number): Promise<LeaderRow[]> {
   );
 }
 
-/** 오늘 사용자별 클릭 합계. 현황 페이지의 "오늘 친구들" 줄에 써요. */
-export async function fetchTodayByUser(): Promise<{ name: string; count: number; isMe: boolean }[]> {
+export type TodayItem = {
+  itemId: string;
+  actor: string;
+  name: string;
+  count: number;
+  backgroundColor: string | null;
+  backgroundImageUrl: string | null;
+  userName: string;
+  isMe: boolean;
+};
+
+/** 오늘 항목별 클릭 수 (전체 사용자). 현황 페이지의 "오늘 친구들" 미니 카드에 써요. */
+export async function fetchTodayItems(): Promise<TodayItem[]> {
   assertReady();
-  const { data, error } = await supabase.rpc("today_by_user");
+  const { data, error } = await supabase.rpc("today_items");
   if (error) throw error;
-  return (data ?? []).map((r: { name: string; count: number; is_me: boolean }) => ({
-    name: r.name,
-    count: r.count,
-    isMe: r.is_me,
-  }));
+  return (data ?? []).map(
+    (r: {
+      item_id: string;
+      actor: string;
+      name: string;
+      count: number;
+      background_color: string | null;
+      background_image_url: string | null;
+      user_name: string;
+      is_me: boolean;
+    }) => ({
+      itemId: r.item_id,
+      actor: r.actor,
+      name: r.name,
+      count: r.count,
+      backgroundColor: r.background_color,
+      backgroundImageUrl: r.background_image_url,
+      userName: r.user_name,
+      isMe: r.is_me,
+    })
+  );
 }
 
 /* ── 랭킹 ── */

@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -13,8 +14,9 @@ import {
   YAxis,
 } from "recharts";
 import { POLL_MS, TEXT } from "@/config";
-import { fetchDailyCounts, fetchSnapshot, fetchTodayByUser, type Row } from "@/lib/api";
+import { fetchDailyCounts, fetchSnapshot, fetchTodayItems, type Row, type TodayItem } from "@/lib/api";
 import { useSelectedUser } from "@/lib/useSelectedUser";
+import { readableTextColor } from "@/lib/color";
 
 // dataviz 스킬 참고 팔레트 (이 앱은 라이트 모드 전용이라 hex 로 고정)
 const BLUE = "#2a78d6";
@@ -63,19 +65,50 @@ function LineTooltip({ active, payload }: { active?: boolean; payload?: { payloa
   );
 }
 
+/** "오늘 친구들"의 미니 카드 하나. 항목의 등록 이미지/색을 그대로 쓰고, 이름은 카드 아래 작은 글씨로. */
+function TodayItemCard({ item }: { item: TodayItem }) {
+  const style: CSSProperties = item.backgroundImageUrl
+    ? {
+        backgroundImage: `linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.55)), url(${item.backgroundImageUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        color: "#fff",
+        borderColor: "transparent",
+      }
+    : item.backgroundColor
+      ? {
+          backgroundColor: item.backgroundColor,
+          color: readableTextColor(item.backgroundColor),
+          borderColor: "transparent",
+        }
+      : {};
+
+  return (
+    <div className="flex w-16 shrink-0 flex-col items-center gap-1 sm:w-20">
+      <div
+        style={style}
+        className="flex h-16 w-16 items-center justify-center rounded-xl border border-neutral-200 bg-white sm:h-20 sm:w-20"
+      >
+        <span className="text-lg font-semibold tabular-nums sm:text-xl">{item.count.toLocaleString()}</span>
+      </div>
+      <span className="w-full truncate text-center text-[10px] text-neutral-400">{item.name}</span>
+    </div>
+  );
+}
+
 export default function StatsView() {
   const { user } = useSelectedUser();
   const [rows, setRows] = useState<Row[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [daily, setDaily] = useState<{ day: string; count: number }[]>([]);
-  const [today, setToday] = useState<{ name: string; count: number; isMe: boolean }[]>([]);
+  const [todayItems, setTodayItems] = useState<TodayItem[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
 
   const load = useCallback(async (target: string | null) => {
     try {
       // 친구들 오늘치는 누가 선택돼 있든 똑같아서 따로 가져와요.
-      fetchTodayByUser().then(setToday).catch(() => {});
+      fetchTodayItems().then(setTodayItems).catch(() => {});
       const snap = await fetchSnapshot(target);
       if (!target) {
         setRows([]);
@@ -124,6 +157,16 @@ export default function StatsView() {
     });
   }, [daily]);
 
+  // 사용자별로 묶어요. 서버가 이미 "합계 많은 사람 먼저 · 항목 등록 순"으로 정렬해서 내려줘요.
+  const todayGroups = useMemo(() => {
+    const map = new Map<string, { userName: string; isMe: boolean; items: TodayItem[] }>();
+    todayItems.forEach((it) => {
+      if (!map.has(it.userName)) map.set(it.userName, { userName: it.userName, isMe: it.isMe, items: [] });
+      map.get(it.userName)!.items.push(it);
+    });
+    return [...map.values()];
+  }, [todayItems]);
+
   return (
     <main className="mx-auto max-w-3xl px-5 pb-16 pt-10 sm:pt-14">
       {status === "error" && (
@@ -164,34 +207,29 @@ export default function StatsView() {
             ))}
           </div>
 
-          {/* 오늘 친구들 — 카드 말고 한 줄씩 */}
+          {/* 오늘 친구들 — 사람별로 묶고, 그 사람이 등록한 항목들을 미니 카드로 가로 스크롤 */}
           <section className="mt-10">
             <h2 className="text-lg font-semibold tracking-tight">{TEXT.stats.todayTitle}</h2>
             <p className="mt-1 text-xs text-neutral-400">{TEXT.stats.todayHint}</p>
-            {/* 한 명당 한 줄짜리 작은 카드. 0 이어도 이름은 보여줘요 — 누가 조용한지도 정보니까요. */}
-            <ul className="mt-4 flex flex-col gap-2">
-              {today.map((t) => (
-                <li
-                  key={t.name}
-                  className={
-                    "flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm " +
-                    (t.isMe
-                      ? "border-neutral-900 bg-neutral-50 font-semibold text-neutral-900"
-                      : "border-neutral-200 text-neutral-600")
-                  }
-                >
-                  <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                  <span
+            <div className="mt-4 flex flex-col gap-5">
+              {todayGroups.map((g) => (
+                <div key={g.userName}>
+                  <p
                     className={
-                      "shrink-0 text-base tabular-nums " +
-                      (t.count === 0 ? "text-neutral-300" : "font-semibold text-neutral-900")
+                      "text-sm " + (g.isMe ? "font-semibold text-neutral-900" : "font-medium text-neutral-500")
                     }
                   >
-                    {t.count.toLocaleString()}
-                  </span>
-                </li>
+                    {g.userName}
+                  </p>
+                  {/* 5개까지는 화면에, 넘어가면 가로 스크롤 */}
+                  <div className="mt-2 flex gap-3 overflow-x-auto pb-1">
+                    {g.items.map((it) => (
+                      <TodayItemCard key={it.itemId} item={it} />
+                    ))}
+                  </div>
+                </div>
               ))}
-            </ul>
+            </div>
           </section>
 
           {rows.length === 0 ? (
