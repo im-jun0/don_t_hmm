@@ -69,43 +69,48 @@ export async function POST(request: Request) {
     .insert({ from_user_id: fromUser.id, to_user_id: toUser.id });
   if (insertError) throw insertError;
 
-  // 받는 사람이 푸시를 안 켜놨으면 그냥 기록만 남기고 끝나요.
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  const privateKey = process.env.VAPID_PRIVATE_KEY;
-  if (publicKey && privateKey) {
-    webpush.setVapidDetails(
-      process.env.VAPID_SUBJECT || "mailto:admin@example.com",
-      publicKey,
-      privateKey
-    );
+  // 힘내요 자체는 이미 기록됐어요. 푸시는 "되면 좋은" 부가 기능이라, 여기서 뭐가
+  // 터지든(키 형식 오류, 네트워크 등) 응답은 항상 성공으로 돌려줘요.
+  try {
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const privateKey = process.env.VAPID_PRIVATE_KEY;
+    if (publicKey && privateKey) {
+      webpush.setVapidDetails(
+        process.env.VAPID_SUBJECT || "mailto:admin@example.com",
+        publicKey,
+        privateKey
+      );
 
-    const { data: subs } = await db
-      .from("push_subscriptions")
-      .select("id, endpoint, p256dh, auth")
-      .eq("user_id", toUser.id);
+      const { data: subs } = await db
+        .from("push_subscriptions")
+        .select("id, endpoint, p256dh, auth")
+        .eq("user_id", toUser.id);
 
-    const payload = JSON.stringify({
-      title: TEXT.cheer.pushTitle(fromUser.name),
-      body: TEXT.cheer.pushBody,
-      url: "/",
-      tag: "dont-hmm-cheer",
-    });
+      const payload = JSON.stringify({
+        title: TEXT.cheer.pushTitle(fromUser.name),
+        body: TEXT.cheer.pushBody,
+        url: "/",
+        tag: "dont-hmm-cheer",
+      });
 
-    const dead: string[] = [];
-    await Promise.all(
-      (subs ?? []).map(async (s) => {
-        try {
-          await webpush.sendNotification(
-            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-            payload
-          );
-        } catch (e) {
-          const code = (e as { statusCode?: number }).statusCode;
-          if (code === 404 || code === 410) dead.push(s.id);
-        }
-      })
-    );
-    if (dead.length > 0) await db.from("push_subscriptions").delete().in("id", dead);
+      const dead: string[] = [];
+      await Promise.all(
+        (subs ?? []).map(async (s) => {
+          try {
+            await webpush.sendNotification(
+              { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+              payload
+            );
+          } catch (e) {
+            const code = (e as { statusCode?: number }).statusCode;
+            if (code === 404 || code === 410) dead.push(s.id);
+          }
+        })
+      );
+      if (dead.length > 0) await db.from("push_subscriptions").delete().in("id", dead);
+    }
+  } catch (e) {
+    console.error("cheer push failed", e);
   }
 
   return Response.json({ ok: true });

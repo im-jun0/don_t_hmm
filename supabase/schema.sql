@@ -318,7 +318,7 @@ create policy "item-backgrounds owner upload" on storage.objects
       select 1 from items i
       join users u on u.id = i.user_id
       where u.auth_user_id = auth.uid()
-        and i.id::text = (storage.foldername(name))[1]
+        and i.id::text = (storage.foldername(storage.objects.name))[1]
     )
   );
 
@@ -717,6 +717,8 @@ grant execute on function cheer_leaderboard() to authenticated;
 
 -- ── 카드용 조회 ──
 -- 오늘치와 누적을 한 번에 가져와요. 메인 카드는 today_count, 현황은 total_count 를 써요.
+-- returns table 에 sort_order 컬럼이 추가돼서 CREATE OR REPLACE 로는 안 바뀌어요. 먼저 지워요.
+drop function if exists items_with_counts(uuid);
 create or replace function items_with_counts(p_user_id uuid)
 returns table (
   id uuid,
@@ -756,6 +758,8 @@ grant execute on function items_with_counts(uuid) to anon, authenticated;
 -- ── 오늘 다 같이 얼마나 눌렀나 (현황 페이지) ──
 -- 항목(카드) 단위로 오늘치를 돌려줘요. 미니 카드가 이미지/카운트/항목명을 그대로 보여줄 수 있게요.
 -- 사용자는 오늘 합계가 많은 순, 그 안에서는 항목 등록 순이에요.
+-- (사용자 단위로 합계만 돌려주던 이전 버전은 today_by_user() 였어요. 더 안 쓰여서 지워요.)
+drop function if exists today_by_user();
 create or replace function today_items()
 returns table (
   item_id uuid,
