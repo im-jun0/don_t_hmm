@@ -385,12 +385,51 @@ begin
 end;
 $$;
 
+-- 로그인한 내 페이지의 카드 삭제: 내 항목만, PIN 없이 바로 삭제
+create or replace function delete_my_item(p_item_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  my_id uuid;
+begin
+  select id into my_id from users where auth_user_id = auth.uid();
+  if my_id is null then
+    raise exception 'not linked';
+  end if;
+  delete from items where id = p_item_id and user_id = my_id;
+end;
+$$;
+
+-- 로그인한 내 페이지의 카드 이름(행위자/행위명) 수정: 내 항목만, PIN 없이 바로 수정
+create or replace function update_my_item(p_item_id uuid, p_actor text, p_name text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  my_id uuid;
+begin
+  select id into my_id from users where auth_user_id = auth.uid();
+  if my_id is null then
+    raise exception 'not linked';
+  end if;
+  update items set actor = p_actor, name = p_name
+    where id = p_item_id and user_id = my_id;
+end;
+$$;
+
 grant execute on function
   my_user(),
   unlinked_users(),
   claim_user(uuid),
   create_my_user(text),
-  add_my_item(text, text)
+  add_my_item(text, text),
+  delete_my_item(uuid),
+  update_my_item(uuid, text, text)
 to authenticated;
 
 -- ── 미니게임: Don't Hmm 30초 ──

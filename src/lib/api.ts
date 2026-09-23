@@ -215,6 +215,20 @@ export async function addMyItem(actor: string, name: string): Promise<string> {
   return data as string;
 }
 
+/** 로그인한 내 페이지에서 PIN 없이 내 항목을 바로 삭제해요 (내 계정 소유만). */
+export async function deleteMyItem(itemId: string): Promise<void> {
+  assertReady();
+  const { error } = await supabase.rpc("delete_my_item", { p_item_id: itemId });
+  if (error) throw error;
+}
+
+/** 로그인한 내 페이지에서 PIN 없이 내 항목의 행위자/행위명을 바로 수정해요 (내 계정 소유만). */
+export async function updateMyItem(itemId: string, actor: string, name: string): Promise<void> {
+  assertReady();
+  const { error } = await supabase.rpc("update_my_item", { p_item_id: itemId, p_actor: actor, p_name: name });
+  if (error) throw error;
+}
+
 const KAKAO_AUTHORIZE_URL = "https://kauth.kakao.com/oauth/authorize";
 const KAKAO_STATE_KEY = "donthmm:kakao_state";
 

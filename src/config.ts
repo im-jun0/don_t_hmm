@@ -174,6 +174,7 @@ export const TEXT = {
 
   cardStyle: {
     title: "카드 꾸미기",
+    nameTitle: "이름",
     colorTab: "배경색",
     customColor: "직접 고르기",
     imageTab: "이미지 업로드",
@@ -185,6 +186,7 @@ export const TEXT = {
 
   addItem: {
     title: "항목 추가",
+    addActor: "행위자 추가",
     save: "추가",
     saveFailed: "추가하지 못했어요. 잠시 후 다시 시도해주세요.",
   },

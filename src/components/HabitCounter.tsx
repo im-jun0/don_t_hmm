@@ -284,6 +284,11 @@ export default function HabitCounter() {
   const applyStyle = (id: string, patch: { backgroundColor: string | null; backgroundImageUrl: string | null }) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
+  const applyRename = (id: string, patch: { actor: string; name: string }) =>
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.id !== id));
+
   const increment = async (row: Row, el: HTMLElement) => {
     if (!current) return;
     spawnPop(el);
@@ -383,6 +388,16 @@ export default function HabitCounter() {
               </section>
             );
           })}
+
+          {isMine && groups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setAddingActor("")}
+              className="mt-10 w-full rounded-2xl border border-dashed border-neutral-300 px-4 py-3 text-sm font-medium text-neutral-500 transition hover:border-neutral-400 hover:text-neutral-700 active:scale-[0.99]"
+            >
+              {TEXT.addItem.addActor}
+            </button>
+          )}
         </>
       )}
 
@@ -401,10 +416,19 @@ export default function HabitCounter() {
       {editingRow && (
         <CardStyleEditor
           row={editingRow}
+          isMine={isMine}
           onClose={() => setEditingRow(null)}
           onChange={(patch) => {
             applyStyle(editingRow.id, patch);
             setEditingRow((r) => (r ? { ...r, ...patch } : r));
+          }}
+          onRename={(patch) => {
+            applyRename(editingRow.id, patch);
+            setEditingRow((r) => (r ? { ...r, ...patch } : r));
+          }}
+          onDelete={() => {
+            removeRow(editingRow.id);
+            setEditingRow(null);
           }}
         />
       )}
