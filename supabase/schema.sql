@@ -11,6 +11,7 @@
 --   events : 클릭 1번 = 1행. 현황 페이지의 일자별 추이 계산용
 --   item_daily_counts : 항목별 x 날짜별 카운트. 카드에 보이는 "오늘" 숫자를 여기서 읽어요
 --   app_config : 항목관리 PIN 저장
+--   cheers : 다른 사람 페이지에서 보낸 "힘내요" 기록 (/api/cheer 가 기록 + 웹푸시 발송)
 --   users.auth_user_id : 카카오(Supabase Auth) 계정 1개 = 사용자 1명 연결
 --   storage.item-backgrounds : 카드 배경 이미지 업로드 버킷 (공개 읽기, 업로드는 본인 항목만)
 
@@ -503,10 +504,22 @@ create table if not exists push_subscriptions (
   created_at timestamptz not null default now()
 );
 
+-- 힘내요: 다른 사람 페이지에서 "그 소리들 참느라 고생한다"는 의미로 보내는 응원.
+-- 기록(누가 누구에게 언제)은 /api/cheer 가 secret key 로 남기고, 그 자리에서 웹푸시도 보내요.
+create table if not exists cheers (
+  id uuid primary key default gen_random_uuid(),
+  from_user_id uuid not null references users(id) on delete cascade,
+  to_user_id uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists cheers_to_created_idx on cheers(to_user_id, created_at);
+create index if not exists cheers_from_to_created_idx on cheers(from_user_id, to_user_id, created_at);
+
 alter table game_rounds enable row level security;
 alter table game_scores enable row level security;
 alter table push_subscriptions enable row level security;
--- 세 테이블 모두 정책 없음 = anon/authenticated 직접 접근 차단. RPC 와 secret key 로만 써요.
+alter table cheers enable row level security;
+-- 네 테이블 모두 정책 없음 = anon/authenticated 직접 접근 차단. RPC 와 secret key 로만 써요.
 
 -- ── 지금 상태 (waiting: 오늘 판 대기 / live: 진행 중 / done: 끝) ──
 -- 시작 시각은 대기 중엔 알려주지 않아요. 언제 올지 모르는 게 이 게임의 재미라서요.
@@ -677,6 +690,30 @@ as $$
 $$;
 
 grant execute on function total_leaderboard() to authenticated;
+
+-- ── 랭킹: 힘내요 받은 횟수 ──
+-- 많이 받을수록 1등 (= 그만큼 소리들을 참느라 고생하고 있다는, 곧 열반에 오를 뜻)
+create or replace function cheer_leaderboard()
+returns table (rank int, name text, count int, is_me boolean)
+language sql
+security definer
+set search_path = public
+as $$
+  with totals as (
+    select u.id as id,
+           u.name as name,
+           u.auth_user_id as auth_user_id,
+           count(c.id)::int as total
+      from users u
+      left join cheers c on c.to_user_id = u.id
+     group by u.id, u.name, u.auth_user_id
+  )
+  select (rank() over (order by t.total desc))::int, t.name, t.total, t.auth_user_id = auth.uid()
+    from totals t
+   order by t.total desc, t.name;
+$$;
+
+grant execute on function cheer_leaderboard() to authenticated;
 
 -- ── 카드용 조회 ──
 -- 오늘치와 누적을 한 번에 가져와요. 메인 카드는 today_count, 현황은 total_count 를 써요.

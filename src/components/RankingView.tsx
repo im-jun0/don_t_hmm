@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { FANFARE_RANK, GAME, TEXT } from "@/config";
-import { fetchGameLeaderboard, fetchTotalLeaderboard, type LeaderRow, type RankRow } from "@/lib/api";
+import {
+  fetchCheerLeaderboard,
+  fetchGameLeaderboard,
+  fetchTotalLeaderboard,
+  type LeaderRow,
+  type RankRow,
+} from "@/lib/api";
 import Fanfare from "@/components/Fanfare";
 import RankList from "@/components/RankList";
 
@@ -22,6 +28,7 @@ function myBestRank(
 export default function RankingView() {
   const [totals, setTotals] = useState<RankRow[]>([]);
   const [game, setGame] = useState<LeaderRow[]>([]);
+  const [cheers, setCheers] = useState<RankRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [celebrate, setCelebrate] = useState<{ rank: number; award: string } | null>(null);
 
@@ -30,16 +37,19 @@ export default function RankingView() {
     Promise.all([
       fetchTotalLeaderboard().catch(() => [] as RankRow[]),
       fetchGameLeaderboard(GAME.leaderboardDays).catch(() => [] as LeaderRow[]),
-    ]).then(([t, g]) => {
+      fetchCheerLeaderboard().catch(() => [] as RankRow[]),
+    ]).then(([t, g, c]) => {
       if (cancelled) return;
       setTotals(t);
       setGame(g);
+      setCheers(c);
       setLoaded(true);
       // 들어오자마자 한 번만 울려요. 폴링이 없어서 다시 울릴 일도 없어요.
       setCelebrate(
         myBestRank([
           { award: TEXT.ranking.totalAward, rows: t },
           { award: TEXT.ranking.gameAward, rows: g },
+          { award: TEXT.ranking.cheerAward, rows: c },
         ])
       );
     });
@@ -88,6 +98,14 @@ export default function RankingView() {
               emptyText={TEXT.ranking.empty}
               suffix={(row) => `/ ${(row as LeaderRow).rounds}판`}
             />
+          </section>
+
+          <section className="mt-12">
+            <h2 className="break-keep text-xl font-semibold tracking-tight">
+              🙏 {TEXT.ranking.cheerAward}
+            </h2>
+            <p className="mb-4 mt-1 text-sm text-neutral-500">{TEXT.ranking.cheerHint}</p>
+            <RankList rows={cheers} emptyText={TEXT.ranking.empty} />
           </section>
         </>
       )}

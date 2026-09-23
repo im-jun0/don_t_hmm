@@ -109,6 +109,7 @@ export async function GET(request: Request) {
     title: TEXT.game.title,
     body: TEXT.game.liveHint,
     url: "/game",
+    tag: "dont-hmm-game",
   });
 
   const dead: string[] = [];

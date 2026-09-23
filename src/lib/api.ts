@@ -410,6 +410,37 @@ export async function fetchTotalLeaderboard(): Promise<RankRow[]> {
   }));
 }
 
+/** 힘내요를 가장 많이 받은 순위. */
+export async function fetchCheerLeaderboard(): Promise<RankRow[]> {
+  assertReady();
+  const { data, error } = await supabase.rpc("cheer_leaderboard");
+  if (error) throw error;
+  return (data ?? []).map((r: { rank: number; name: string; count: number; is_me: boolean }) => ({
+    rank: r.rank,
+    name: r.name,
+    count: r.count,
+    isMe: r.is_me,
+  }));
+}
+
+/** 다른 사람 페이지에서 힘내요를 보내요. 기록과 웹푸시 발송은 서버(/api/cheer)가 해요. */
+export async function sendCheer(toUserId: string): Promise<void> {
+  assertReady();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("not signed in");
+
+  const res = await fetch("/api/cheer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ toUserId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body.error === "string" ? body.error : "failed");
+  }
+}
+
 /* ── 푸시 알림 구독 ── */
 
 export async function savePushSubscription(

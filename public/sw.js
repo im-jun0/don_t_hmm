@@ -1,4 +1,4 @@
-/* 게임 시작 알림을 받는 서비스 워커. /api/cron/tick 이 보낸 푸시를 띄워요. */
+/* 푸시를 받는 서비스 워커. /api/cron/tick(게임 시작)과 /api/cheer(힘내요)가 보내요. */
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
@@ -16,8 +16,8 @@ self.addEventListener("push", (event) => {
       body: payload.body || "",
       icon: "/icon.svg",
       badge: "/icon.svg",
-      data: { url: payload.url || "/game" },
-      tag: "dont-hmm-game", // 같은 판 알림이 여러 개 쌓이지 않게
+      data: { url: payload.url || "/" },
+      tag: payload.tag || "dont-hmm", // 같은 종류 알림이 여러 개 쌓이지 않게. 종류별로 payload.tag 를 다르게 보내요.
       renotify: true,
       vibrate: [80, 40, 80],
     })

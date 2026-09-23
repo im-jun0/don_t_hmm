@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { EMOJIS, POLL_MS, TEXT } from "@/config";
-import { fetchSnapshot, incrementItem, type Row } from "@/lib/api";
+import { fetchSnapshot, incrementItem, sendCheer, type Row } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { useSelectedUser } from "@/lib/useSelectedUser";
 import { readableTextColor } from "@/lib/color";
@@ -13,6 +14,8 @@ import LinkUser from "@/components/LinkUser";
 
 const POPUP_MS = 900; // globals.css 의 .hc-pop 지속 시간과 같게
 const LONG_PRESS_MS = 2000;
+/** 이보다 가로로 많이, 세로보다 더 가로로 움직여야 스와이프로 쳐요. */
+const SWIPE_MIN_DX = 60;
 
 /** 한 줄에 최대 이만큼. 아무리 많아도 이보다 넓게는 안 깔아요. */
 const MAX_COLUMNS = 5;
@@ -213,11 +216,13 @@ function ItemCard({
 }
 
 export default function HabitCounter() {
-  const { user } = useSelectedUser();
+  const { user, selectUser } = useSelectedUser();
   const { status: authStatus, me, displayName } = useAuth();
   const [users, setUsers] = useState<string[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [rowsFor, setRowsFor] = useState<string | null>(null); // rows 가 누구 것인지
+  const [viewedUserId, setViewedUserId] = useState<string | null>(null); // 힘내요 보낼 때 필요해요
+  const [cheering, setCheering] = useState(false);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [pops, setPops] = useState<Pop[]>([]);
@@ -237,6 +242,7 @@ export default function HabitCounter() {
       if (snap.rows && userRef.current === target) {
         setRows(snap.rows);
         setRowsFor(target);
+        setViewedUserId(snap.userId);
       }
       setStatus("ready");
     } catch (e) {
@@ -259,9 +265,10 @@ export default function HabitCounter() {
 
   /* ── 파생 데이터 ── */
   const current = user && users.includes(user) ? user : null;
+  // 실제 소유 여부. 힘내요처럼 "진짜 다른 사람인지"가 중요한 곳은 이걸 써요.
+  const actuallyMine = authStatus === "ready" && me?.name === current; // 공유 링크로 남의 페이지를 볼 때는 false
   // 로컬 개발 중엔 카카오 로그인 계정과 테스트하려는 사용자가 다를 때가 많아서 구분 자체를 꺼요.
-  const isMine =
-    process.env.NODE_ENV !== "production" || (authStatus === "ready" && me?.name === current); // 공유 링크로 남의 페이지를 볼 때는 false
+  const isMine = process.env.NODE_ENV !== "production" || actuallyMine;
   const myRows = useMemo(() => (rowsFor === current ? rows : []), [rows, rowsFor, current]);
   const rowsReady = current !== null && rowsFor === current;
   const total = myRows.reduce((sum, r) => sum + r.count, 0);
@@ -321,9 +328,57 @@ export default function HabitCounter() {
     }
   };
 
+  const handleCheer = async () => {
+    if (!viewedUserId || cheering) return;
+    setCheering(true);
+    try {
+      await sendCheer(viewedUserId);
+      toast.success(TEXT.cheer.sent);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      toast.error(
+        msg === "cooldown"
+          ? TEXT.cheer.cooldown
+          : msg === "self"
+            ? TEXT.cheer.self
+            : TEXT.cheer.failed
+      );
+    } finally {
+      setCheering(false);
+    }
+  };
+
+  /* ── 좌우 스와이프로 다른 사람 메인 넘겨보기 ── */
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    swipeStart.current = { x: t.clientX, y: t.clientY };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    if (!start || !current || users.length < 2) return;
+
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_MIN_DX || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+
+    const idx = users.indexOf(current);
+    if (idx === -1) return;
+    const nextIdx = dx < 0 ? (idx + 1) % users.length : (idx - 1 + users.length) % users.length;
+    selectUser(users[nextIdx]);
+  };
+
   /* ── 화면 ── */
   return (
-    <main className="mx-auto max-w-3xl px-5 pb-16 pt-10 sm:pt-14">
+    <main
+      className="mx-auto max-w-3xl px-5 pb-16 pt-10 sm:pt-14"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {status === "error" && (
         <p className="rounded-2xl bg-neutral-50 px-5 py-4 text-sm text-neutral-600">
           {errorMsg || TEXT.errorFetch}
@@ -345,6 +400,33 @@ export default function HabitCounter() {
         <>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{current}</h1>
           {rowsReady && <p className="mt-2 text-neutral-500">{TEXT.totalSuffix(total)}</p>}
+
+          {/* 남의 페이지일 때만: 그 소리들 참느라 고생한다는 의미로 응원 보내기 */}
+          {rowsReady && !actuallyMine && viewedUserId && (
+            <button
+              type="button"
+              onClick={handleCheer}
+              disabled={cheering}
+              className="mt-4 rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition active:scale-95 disabled:opacity-50"
+            >
+              {TEXT.cheer.button}
+            </button>
+          )}
+
+          {/* 좌우로 넘길 수 있다는 걸 알려주는 점들. 지금 보고 있는 사람이 진하게 표시돼요. */}
+          {users.length > 1 && (
+            <div className="mt-4 flex gap-1.5">
+              {users.map((u) => (
+                <span
+                  key={u}
+                  className={
+                    "h-1.5 rounded-full transition-all " +
+                    (u === current ? "w-4 bg-neutral-900" : "w-1.5 bg-neutral-200")
+                  }
+                />
+              ))}
+            </div>
+          )}
 
           {rowsReady && groups.length === 0 && (
             <div className="mt-10 rounded-2xl bg-neutral-50 px-5 py-4 text-sm text-neutral-600">
