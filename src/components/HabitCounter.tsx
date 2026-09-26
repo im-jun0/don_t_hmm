@@ -10,6 +10,7 @@ import { readableTextColor } from "@/lib/color";
 import HmmFace from "@/components/HmmFace";
 import CardStyleEditor from "@/components/CardStyleEditor";
 import AddItemModal from "@/components/AddItemModal";
+import ActorEditModal from "@/components/ActorEditModal";
 import LinkUser from "@/components/LinkUser";
 
 const POPUP_MS = 900; // globals.css 의 .hc-pop 지속 시간과 같게
@@ -227,6 +228,7 @@ export default function HabitCounter() {
   const [errorMsg, setErrorMsg] = useState("");
   const [pops, setPops] = useState<Pop[]>([]);
   const [editingRow, setEditingRow] = useState<Row | null>(null);
+  const [editingActor, setEditingActor] = useState<{ actor: string; count: number } | null>(null);
   const [addingActor, setAddingActor] = useState<string | null>(null);
   const pending = useRef(0); // 저장 중인 클릭 수 (폴링이 낙관적 숫자를 덮어쓰지 않게)
   const popKey = useRef(0);
@@ -451,14 +453,24 @@ export default function HabitCounter() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-semibold tracking-tight">{actor}</h2>
                     {isMine && (
-                      <button
-                        type="button"
-                        aria-label="항목 추가"
-                        onClick={() => setAddingActor(actor)}
-                        className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-100 text-sm font-medium text-neutral-500 hover:bg-neutral-200"
-                      >
-                        +
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          aria-label="항목 추가"
+                          onClick={() => setAddingActor(actor)}
+                          className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-100 text-sm font-medium text-neutral-500 hover:bg-neutral-200"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={actor + " 수정"}
+                          onClick={() => setEditingActor({ actor, count: items.length })}
+                          className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-100 text-xs text-neutral-500 hover:bg-neutral-200"
+                        >
+                          ✎
+                        </button>
+                      </>
                     )}
                   </div>
                   <span className="text-sm tabular-nums text-neutral-400">
@@ -537,6 +549,18 @@ export default function HabitCounter() {
           onClose={() => setAddingActor(null)}
           onAdded={() => {
             setAddingActor(null);
+            load(userRef.current);
+          }}
+        />
+      )}
+
+      {editingActor && (
+        <ActorEditModal
+          actor={editingActor.actor}
+          itemCount={editingActor.count}
+          onClose={() => setEditingActor(null)}
+          onDone={() => {
+            setEditingActor(null);
             load(userRef.current);
           }}
         />

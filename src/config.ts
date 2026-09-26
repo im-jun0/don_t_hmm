@@ -196,6 +196,19 @@ export const TEXT = {
     saveFailed: "추가하지 못했어요. 잠시 후 다시 시도해주세요.",
   },
 
+  actorEdit: {
+    title: "행위자 수정",
+    nameLabel: "행위자 이름",
+    save: "저장",
+    renamed: "이름을 바꿨어요.",
+    renameFailed: "바꾸지 못했어요. 잠시 후 다시 시도해주세요.",
+    merged: (name: string) => `이미 있던 ${name} 와(과) 합쳐졌어요.`,
+    delete: "이 행위자 삭제",
+    deleteWarn: (n: number) => `카드 ${n}개와 그동안 쌓인 기록이 같이 사라져요. 되돌릴 수 없어요.`,
+    deleted: (name: string) => `${name} 을(를) 지웠어요.`,
+    deleteFailed: "지우지 못했어요. 잠시 후 다시 시도해주세요.",
+  },
+
   cheer: {
     // 그 소리들을 참느라 고생하고 있다는 의미로 보내는 응원 버튼.
     button: "💪 힘내요",

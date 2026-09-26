@@ -232,6 +232,28 @@ export async function updateMyItem(itemId: string, actor: string, name: string):
   if (error) throw error;
 }
 
+/**
+ * 행위자 이름을 바꿔요. 그 행위자로 묶인 내 항목 전부에 적용돼요.
+ * 이미 있는 이름으로 바꾸면 두 묶음이 합쳐져요. 바뀐 항목 수를 돌려줘요.
+ */
+export async function renameMyActor(oldName: string, newName: string): Promise<number> {
+  assertReady();
+  const { data, error } = await supabase.rpc("rename_my_actor", {
+    p_old: oldName,
+    p_new: newName,
+  });
+  if (error) throw error;
+  return data as number;
+}
+
+/** 행위자를 지워요. 그 행위자의 카드가 전부 사라져요. 지워진 항목 수를 돌려줘요. */
+export async function deleteMyActor(actor: string): Promise<number> {
+  assertReady();
+  const { data, error } = await supabase.rpc("delete_my_actor", { p_actor: actor });
+  if (error) throw error;
+  return data as number;
+}
+
 const KAKAO_AUTHORIZE_URL = "https://kauth.kakao.com/oauth/authorize";
 const KAKAO_STATE_KEY = "donthmm:kakao_state";
 
