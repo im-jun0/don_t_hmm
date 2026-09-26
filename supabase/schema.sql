@@ -463,6 +463,55 @@ begin
 end;
 $$;
 
+-- 로그인한 내 페이지의 행위자 이름 변경: 그 행위자로 묶인 내 항목 전부에 적용돼요.
+-- 행위자는 따로 테이블이 없고 items.actor 값이라, 같은 이름끼리 묶어서 한 번에 바꿔요.
+-- 이미 있는 행위자 이름으로 바꾸면 두 묶음이 자연스럽게 합쳐져요.
+create or replace function rename_my_actor(p_old text, p_new text)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  my_id uuid;
+  affected int;
+begin
+  select id into my_id from users where auth_user_id = auth.uid();
+  if my_id is null then
+    raise exception 'not linked';
+  end if;
+  perform require_text_(p_old, 'actor');
+  perform require_text_(p_new, 'actor');
+  update items set actor = p_new where user_id = my_id and actor = p_old;
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+
+-- 로그인한 내 페이지의 행위자 삭제: 그 행위자의 카드가 전부 사라져요.
+-- items 가 지워지면 item_daily_counts 와 events 도 on delete cascade 로 같이 지워져요.
+-- 되돌릴 수 없으니 화면에서 몇 개가 사라지는지 먼저 보여주고 한 번 더 묻게 해뒀어요.
+create or replace function delete_my_actor(p_actor text)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  my_id uuid;
+  affected int;
+begin
+  select id into my_id from users where auth_user_id = auth.uid();
+  if my_id is null then
+    raise exception 'not linked';
+  end if;
+  perform require_text_(p_actor, 'actor');
+  delete from items where user_id = my_id and actor = p_actor;
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+
 grant execute on function
   my_user(),
   unlinked_users(),
@@ -471,6 +520,8 @@ grant execute on function
   add_my_item(text, text),
   delete_my_item(uuid),
   update_my_item(uuid, text, text),
+  rename_my_actor(text, text),
+  delete_my_actor(text),
   increment_item(uuid),
   set_item_style(uuid, text, text)
 to authenticated;
